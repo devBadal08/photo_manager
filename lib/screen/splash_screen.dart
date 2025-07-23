@@ -28,8 +28,8 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            //Image.asset('assets/logo.png', width: 120), // Add your logo
-            SizedBox(height: 20),
+            Image.asset('assets/images/logo1.png', width: 200, height: 150),
+            //SizedBox(height: 20),
             CircularProgressIndicator(color: Colors.white), // Loading indicator
           ],
         ),

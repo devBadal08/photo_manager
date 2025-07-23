@@ -2,30 +2,34 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 class PhotoService {
   static Future<bool> uploadImage(File imageFile, String folderName) async {
-    var uri = Uri.parse("http://192.168.0.134:8000/api/photos");
+    try {
+      var uri = Uri.parse("http://192.168.0.134:8000/api/photos");
 
-    var request = http.MultipartRequest('POST', uri);
-    request.fields['folder'] = folderName;
-    request.files.add(
-      await http.MultipartFile.fromPath(
-        'image',
-        imageFile.path,
-        filename: p.basename(imageFile.path),
-      ),
-    );
+      var request = http.MultipartRequest('POST', uri);
+      request.fields['folder'] = folderName;
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'image',
+          imageFile.path,
+          filename: p.basename(imageFile.path),
+        ),
+      );
 
-    var response = await request.send();
+      var response = await request.send();
 
-    if (response.statusCode == 200) {
-      print('Upload successful');
-      return true;
-    } else {
-      print('Upload failed with code: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        print('✅ Upload successful');
+        return true;
+      } else {
+        print('❌ Upload failed with code: ${response.statusCode}');
+        return false;
+      }
+    } catch (e) {
+      print('❌ Upload failed: $e');
       return false;
     }
   }
@@ -38,7 +42,11 @@ class PhotoService {
       }
       return dir;
     } else {
-      return Directory((await getApplicationDocumentsDirectory()).path);
+      final baseDir = Directory('/storage/emulated/0/Pictures/MyApp');
+      if (!await baseDir.exists()) {
+        await baseDir.create(recursive: true);
+      }
+      return baseDir;
     }
   }
 

@@ -50,11 +50,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     if (pickedFile != null) {
       final File imageFile = File(pickedFile.path);
 
-      // ✅ Extract folder name from widget.folder path
-      final folderName = widget.folder.path.split('/').last;
-
-      // ✅ Upload to server
-      bool success = await PhotoService.uploadImage(imageFile, folderName);
+      final basePath = '/storage/emulated/0/Pictures/MyApp';
+      final relativePath = widget.folder.path.replaceFirst('$basePath/', '');
+      bool success = await PhotoService.uploadImage(imageFile, relativePath);
 
       if (success) {
         ScaffoldMessenger.of(
@@ -75,13 +73,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     final pickedFile = await picker.pickImage(source: ImageSource.camera);
 
     if (pickedFile != null) {
-      // Save to local folder
-      Directory targetFolder = widget.folder;
-      if (Platform.isAndroid) {
-        targetFolder = Directory(
-          '/storage/emulated/0/Pictures/MyApp/${widget.folder.path.split('/').last}',
-        );
-      }
+      // ✅ Use widget.folder directly
+      final targetFolder = widget.folder;
 
       if (!await targetFolder.exists()) {
         await targetFolder.create(recursive: true);
@@ -90,37 +83,34 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       final imageName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
       final savedPath = '${targetFolder.path}/$imageName';
       final savedFile = await File(pickedFile.path).copy(savedPath);
-      print("✅ Image exists: ${await File(savedPath).exists()}");
 
-      print("📸 Photo saved at: ${savedFile.path}");
+      print("✅ Image saved at: ${savedFile.path}");
 
-      // ✅ Upload to server
-      final folderName = widget.folder.path.split('/').last;
+      // Upload to server
+      final basePath = '/storage/emulated/0/Pictures/MyApp';
+      final relativePath = widget.folder.path.replaceFirst('$basePath/', '');
 
-      bool success = await PhotoService.uploadImage(savedFile, folderName);
+      bool success = await PhotoService.uploadImage(savedFile, relativePath);
+
       if (success) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('✅ Photo uploaded from camera')),
         );
+        _loadItems();
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('❌ Upload failed')));
       }
 
-      _loadItems(); // refresh local UI
+      _loadItems(); // refresh UI
     }
   }
 
   Future<void> _loadItems() async {
     Directory currentFolder = widget.folder;
-
-    if (Platform.isAndroid) {
-      final folderName = widget.folder.path.split('/').last;
-      currentFolder = Directory(
-        '/storage/emulated/0/Pictures/MyApp/$folderName',
-      );
-    }
 
     print("📁 Trying to load from folder: ${currentFolder.path}");
 
@@ -130,14 +120,26 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     }
 
     final entries = await currentFolder.list().toList();
+
+    print("📁 Raw entries:");
+    for (var e in entries) {
+      print(" - ${e.path}");
+    }
+
+    // Separate subfolders
     final dirs = entries.whereType<Directory>().toList();
-    final files = entries
-        .whereType<File>()
-        .where((f) => f.path.endsWith('.jpg') || f.path.endsWith('.png'))
-        .toList();
 
-    print("📂 Found ${files.length} image files in ${currentFolder.path}");
+    // Filter image files
+    final files = entries.whereType<File>().where((f) {
+      final ext = f.path.toLowerCase();
+      return ext.endsWith('.jpg') ||
+          ext.endsWith('.jpeg') ||
+          ext.endsWith('.png');
+    }).toList();
 
+    print("📂 Found ${dirs.length} folders and ${files.length} images");
+
+    // Combine and update
     setState(() {
       items = [...dirs, ...files];
     });
@@ -181,13 +183,15 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
     final newFolder = Directory('${widget.folder.path}/$name');
 
+    // Create if not exists
     if (!await newFolder.exists()) {
-      await newFolder.create();
+      await newFolder.create(recursive: true);
       print("📁 Subfolder created at: ${newFolder.path}");
     } else {
       print("⚠️ Subfolder already exists at: ${newFolder.path}");
     }
 
+    // Reload UI from updated folder
     _loadItems();
   }
 

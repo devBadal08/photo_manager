@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'photo_list_screen.dart';
 
 class FolderScreen extends StatefulWidget {
@@ -20,7 +19,11 @@ class _FolderScreenState extends State<FolderScreen> {
   }
 
   Future<void> _loadFolders() async {
-    final baseDir = await getApplicationDocumentsDirectory();
+    final baseDir = Directory('/storage/emulated/0/Pictures/MyApp');
+    if (!await baseDir.exists()) {
+      await baseDir.create(recursive: true);
+    }
+
     final all = baseDir
         .listSync()
         .whereType<Directory>()
@@ -68,16 +71,26 @@ class _FolderScreenState extends State<FolderScreen> {
   Future<void> _createFolder(String name) async {
     if (name.isEmpty) return;
 
-    final baseDir = await getApplicationDocumentsDirectory();
-    final newFolder = Directory('${baseDir.path}/$name');
-
-    if (!await newFolder.exists()) {
-      await newFolder.create();
-      print("📁 Folder created at: ${newFolder.path}");
-    } else {
-      print("⚠️ Folder already exists at: ${newFolder.path}");
+    final baseDir = Directory('/storage/emulated/0/Pictures/MyApp');
+    if (!await baseDir.exists()) {
+      await baseDir.create(recursive: true);
     }
 
+    final newFolder = Directory('${baseDir.path}/$name');
+
+    if (await newFolder.exists()) {
+      // Show warning if folder exists
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Folder '$name' already exists."),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    await newFolder.create();
+    print("📁 Folder created at: ${newFolder.path}");
     _loadFolders();
   }
 

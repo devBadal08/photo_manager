@@ -42,10 +42,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Logo Placeholder
-                  Icon(Icons.lock_outline, size: 64, color: Colors.indigo),
-
-                  SizedBox(height: 20),
-
+                  Image.asset(
+                    'assets/images/logo1.png',
+                    width: 250,
+                    height: 150,
+                  ),
                   Text(
                     "Welcome Back!",
                     style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
