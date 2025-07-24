@@ -198,15 +198,26 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.folder.path.split('/').last),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.file_upload),
-            onPressed: _pickAndUploadImage,
-            tooltip: "Upload from Gallery",
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(70),
+        child: AppBar(
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFFFFD180), Color(0xFF81D4FA)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
           ),
-        ],
+          title: Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text(widget.folder.path.split('/').last),
+          ),
+          centerTitle: true,
+          elevation: 4,
+          backgroundColor: Colors.transparent,
+        ),
       ),
       body: items.isEmpty
           ? const Center(child: Text("No files or subfolders yet"))
@@ -240,13 +251,23 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                           height: 80,
                           width: 80,
                           decoration: BoxDecoration(
-                            color: Colors.deepPurple.shade100,
-                            borderRadius: BorderRadius.circular(12),
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(15),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.grey.withOpacity(0.3),
+                                spreadRadius: 2,
+                                blurRadius: 5,
+                                offset: Offset(2, 4),
+                              ),
+                            ],
                           ),
-                          child: const Icon(
-                            Icons.folder,
-                            size: 40,
-                            color: Colors.deepPurple,
+                          child: Center(
+                            child: Icon(
+                              Icons.folder,
+                              size: 40,
+                              color: Color(0xFFF9A825), // Folder color
+                            ),
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -275,12 +296,14 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           FloatingActionButton(
             heroTag: 'createFolder',
             onPressed: _showCreateSubFolderDialog,
+            backgroundColor: Color(0xFF0288D1),
             child: const Icon(Icons.create_new_folder),
           ),
           const SizedBox(height: 16),
           FloatingActionButton(
             heroTag: 'takePhoto',
             onPressed: _takePhoto,
+            backgroundColor: Color(0xFF0288D1),
             child: const Icon(Icons.camera_alt),
           ),
         ],

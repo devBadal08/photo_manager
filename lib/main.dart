@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-
-import 'package:photomanager_practice/screen/folder_screen.dart';
 import 'package:photomanager_practice/screen/splash_screen.dart';
 
 void main() {
