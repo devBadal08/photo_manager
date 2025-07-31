@@ -2,34 +2,37 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:path/path.dart' as p;
+import 'package:path/path.dart' as path;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PhotoService {
-  static Future<bool> uploadImage(File imageFile, String folderName) async {
+  static Future<bool> uploadImage({
+    required File imageFile,
+    required String folderName,
+    required String token,
+  }) async {
+    final url = Uri.parse('https://192.168.1.5:8000/api/photos/uploadAll');
+
     try {
-      var uri = Uri.parse("http://192.168.0.134:8000/api/photos");
+      final request = http.MultipartRequest('POST', url)
+        ..headers['Authorization'] = 'Bearer $token'
+        ..fields['folders[]'] = folderName
+        ..files.add(
+          await http.MultipartFile.fromPath('images[]', imageFile.path),
+        );
 
-      var request = http.MultipartRequest('POST', uri);
-      request.fields['folder'] = folderName;
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'image',
-          imageFile.path,
-          filename: p.basename(imageFile.path),
-        ),
-      );
-
-      var response = await request.send();
+      final response = await request.send();
 
       if (response.statusCode == 200) {
-        print('✅ Upload successful');
         return true;
       } else {
-        print('❌ Upload failed with code: ${response.statusCode}');
+        final errorBody = await response.stream.bytesToString();
+        print('❌ Server responded with ${response.statusCode}');
+        print('❌ Error Body: $errorBody');
         return false;
       }
     } catch (e) {
-      print('❌ Upload failed: $e');
+      print('❌ Error uploading image: $e');
       return false;
     }
   }
@@ -73,6 +76,49 @@ class PhotoService {
         .toList();
   }
 
+  bool isImage(String path) {
+    return path.endsWith('.jpg') ||
+        path.endsWith('.jpeg') ||
+        path.endsWith('.png') ||
+        path.endsWith('.gif');
+  }
+
+  Future<void> uploadAllImagesForUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    final userId = prefs.getString('user_id'); // if your backend needs it
+
+    if (token == null) {
+      print('No token found.');
+      return;
+    }
+
+    final folders = await listFolders();
+
+    for (final folder in folders) {
+      final photos = await loadPhotosInFolder(folder);
+
+      for (final photo in photos) {
+        final success = await uploadImage(
+          imageFile: photo,
+          folderName: folder,
+          token: token,
+        );
+
+        if (success) {
+          try {
+            await photo.delete();
+            print('Deleted after upload: ${photo.path}');
+          } catch (e) {
+            print('Failed to delete ${photo.path}: $e');
+          }
+        } else {
+          print('Failed to upload ${photo.path}');
+        }
+      }
+    }
+  }
+
   Future<void> createFolder(String name) async {
     if (name.trim().isEmpty) return;
     final baseDir = await getBaseDir();
@@ -107,7 +153,7 @@ class PhotoService {
       }
 
       final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}${p.extension(pickedFile.path)}';
+          '${DateTime.now().millisecondsSinceEpoch}${path.extension(pickedFile.path)}';
       final savedFile = await File(
         pickedFile.path,
       ).copy('${folder.path}/$fileName');

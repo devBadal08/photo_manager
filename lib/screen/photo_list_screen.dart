@@ -2,8 +2,10 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PhotoListScreen extends StatefulWidget {
   final Directory folder;
@@ -15,11 +17,14 @@ class PhotoListScreen extends StatefulWidget {
 
 class _PhotoListScreenState extends State<PhotoListScreen> {
   List<FileSystemEntity> items = [];
+  bool uploadEnabled = false;
+  bool selectionMode = false;
+  List<File> selectedImages = [];
 
   @override
   void initState() {
     super.initState();
-    requestPermissions(); // Ask for storage access
+    requestPermissions();
     _loadItems();
   }
 
@@ -27,109 +32,114 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     if (Platform.isAndroid) {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
       if (androidInfo.version.sdkInt >= 33) {
-        final photosStatus = await Permission.photos.request();
-        if (!photosStatus.isGranted) {
-          print("❌ Permission.photos denied");
-          return;
-        }
+        await Permission.photos.request();
       } else {
-        final storageStatus = await Permission.storage.request();
-        if (!storageStatus.isGranted) {
-          print("❌ Permission.storage denied");
-          return;
-        }
+        await Permission.storage.request();
       }
     }
   }
 
-  Future<void> _pickAndUploadImage() async {
-    final pickedFile = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-    );
+  Future<void> _uploadSelectedImages() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
 
-    if (pickedFile != null) {
-      final File imageFile = File(pickedFile.path);
+    if (token == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('❌ No auth token found')));
+      return;
+    }
 
-      final basePath = '/storage/emulated/0/Pictures/MyApp';
-      final relativePath = widget.folder.path.replaceFirst('$basePath/', '');
-      bool success = await PhotoService.uploadImage(imageFile, relativePath);
+    final folderName = widget.folder.path.split('/').last;
+    int successCount = 0;
+
+    for (var image in selectedImages) {
+      final success = await PhotoService.uploadImage(
+        imageFile: image,
+        folderName: folderName,
+        token: token,
+      );
 
       if (success) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Photo uploaded')));
-        _loadItems();
-      } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Upload failed')));
+        successCount++;
       }
-      //await _loadItems();
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '✅ Uploaded $successCount of ${selectedImages.length} selected photo(s)',
+        ),
+      ),
+    );
+
+    setState(() {
+      selectionMode = false;
+      selectedImages.clear();
+    });
   }
 
   Future<void> _takePhoto() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.camera);
+    final pickedFile = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+    );
 
     if (pickedFile != null) {
-      // ✅ Use widget.folder directly
       final targetFolder = widget.folder;
-
       if (!await targetFolder.exists()) {
         await targetFolder.create(recursive: true);
       }
 
       final imageName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final savedPath = '${targetFolder.path}/$imageName';
-      final savedFile = await File(pickedFile.path).copy(savedPath);
+      final savedFile = await File(
+        pickedFile.path,
+      ).copy('${targetFolder.path}/$imageName');
 
-      print("✅ Image saved at: ${savedFile.path}");
-
-      // Upload to server
       final basePath = '/storage/emulated/0/Pictures/MyApp';
       final relativePath = widget.folder.path.replaceFirst('$basePath/', '');
 
-      bool success = await PhotoService.uploadImage(savedFile, relativePath);
+      if (uploadEnabled) {
+        final prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('auth_token');
 
-      if (success) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Photo uploaded from camera')),
-        );
-        _loadItems();
+        if (token == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('❌ No auth token found')),
+          );
+          return;
+        }
+
+        // final success = await PhotoService.uploadImage(
+        //   imageFile: savedFile,
+        //   folderName: relativePath,
+        //   token: token,
+        // );
+
+        // if (success) {
+        //   await savedFile.delete();
+        //   ScaffoldMessenger.of(context).showSnackBar(
+        //     const SnackBar(content: Text('✅ Photo uploaded & deleted locally')),
+        //   );
+        // } else {
+        //   ScaffoldMessenger.of(
+        //     context,
+        //   ).showSnackBar(const SnackBar(content: Text('❌ Upload failed')));
+        // }
       } else {
-        if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('❌ Upload failed')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('📥 Photo saved locally only')),
+        );
       }
 
-      _loadItems(); // refresh UI
+      _loadItems();
     }
   }
 
   Future<void> _loadItems() async {
-    Directory currentFolder = widget.folder;
+    final folder = widget.folder;
+    if (!await folder.exists()) return;
 
-    print("📁 Trying to load from folder: ${currentFolder.path}");
-
-    if (!await currentFolder.exists()) {
-      print("❌ Folder does not exist: ${currentFolder.path}");
-      return;
-    }
-
-    final entries = await currentFolder.list().toList();
-
-    print("📁 Raw entries:");
-    for (var e in entries) {
-      print(" - ${e.path}");
-    }
-
-    // Separate subfolders
-    final dirs = entries.whereType<Directory>().toList();
-
-    // Filter image files
+    final entries = await folder.list().toList();
     final files = entries.whereType<File>().where((f) {
       final ext = f.path.toLowerCase();
       return ext.endsWith('.jpg') ||
@@ -137,9 +147,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           ext.endsWith('.png');
     }).toList();
 
-    print("📂 Found ${dirs.length} folders and ${files.length} images");
+    final dirs = entries.whereType<Directory>().toList();
 
-    // Combine and update
     setState(() {
       items = [...dirs, ...files];
     });
@@ -150,163 +159,198 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
     await showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Enter Subfolder Name'),
-          content: TextField(
-            autofocus: true,
-            decoration: const InputDecoration(hintText: 'MySubFolder'),
-            onChanged: (value) {
-              folderName = value;
-            },
+      builder: (context) => AlertDialog(
+        title: const Text('Enter Subfolder Name'),
+        content: TextField(
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'MySubFolder'),
+          onChanged: (value) => folderName = value,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _createSubFolder(folderName);
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _createSubFolder(folderName);
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
   }
 
   Future<void> _createSubFolder(String name) async {
     if (name.isEmpty) return;
-
     final newFolder = Directory('${widget.folder.path}/$name');
-
-    // Create if not exists
     if (!await newFolder.exists()) {
       await newFolder.create(recursive: true);
-      print("📁 Subfolder created at: ${newFolder.path}");
-    } else {
-      print("⚠️ Subfolder already exists at: ${newFolder.path}");
     }
-
-    // Reload UI from updated folder
     _loadItems();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(70),
-        child: AppBar(
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFFFFD180), Color(0xFF81D4FA)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-          ),
-          title: Padding(
-            padding: const EdgeInsets.only(top: 8.0),
-            child: Text(widget.folder.path.split('/').last),
-          ),
+    return DefaultTabController(
+      length: 4,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(widget.folder.path.split('/').last),
           centerTitle: true,
-          elevation: 4,
-          backgroundColor: Colors.transparent,
-        ),
-      ),
-      body: items.isEmpty
-          ? const Center(child: Text("No files or subfolders yet"))
-          : GridView.builder(
-              padding: const EdgeInsets.all(12),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 1,
-              ),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
-                final name = item.path.split('/').last;
-
-                if (item is Directory) {
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PhotoListScreen(folder: item),
-                        ),
-                      );
-                    },
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          height: 80,
-                          width: 80,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(15),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.grey.withOpacity(0.3),
-                                spreadRadius: 2,
-                                blurRadius: 5,
-                                offset: Offset(2, 4),
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Icon(
-                              Icons.folder,
-                              size: 40,
-                              color: Color(0xFFF9A825), // Folder color
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          name,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  );
-                } else {
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.file(File(item.path), fit: BoxFit.cover),
-                  );
+          backgroundColor: const Color(0xFF1F1F1F),
+          foregroundColor: Colors.white,
+          actions: [
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'select') {
+                  setState(() {
+                    selectionMode = true;
+                    selectedImages.clear();
+                  });
                 }
               },
+              itemBuilder: (BuildContext context) => [
+                const PopupMenuItem<String>(
+                  value: 'select',
+                  child: Text('Select Photos to Upload'),
+                ),
+              ],
+              icon: const Icon(Icons.more_vert),
             ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            heroTag: 'createFolder',
-            onPressed: _showCreateSubFolderDialog,
-            backgroundColor: Color(0xFF0288D1),
-            child: const Icon(Icons.create_new_folder),
+          ],
+          elevation: 4,
+        ),
+        body: items.isEmpty
+            ? const Center(child: Text("No files or subfolders yet"))
+            : GridView.builder(
+                padding: const EdgeInsets.all(12),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 1,
+                ),
+                itemCount: items.length,
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  final name = item.path.split('/').last;
+
+                  if (item is Directory) {
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => PhotoListScreen(folder: item),
+                          ),
+                        );
+                      },
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            height: 80,
+                            width: 80,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(15),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.grey.withOpacity(0.3),
+                                  spreadRadius: 2,
+                                  blurRadius: 5,
+                                  offset: const Offset(2, 4),
+                                ),
+                              ],
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.folder,
+                                size: 40,
+                                color: Color(0xFFF9A825),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    );
+                  } else {
+                    final file = File(item.path);
+                    final isSelected = selectedImages.contains(file);
+
+                    return GestureDetector(
+                      onTap: () {
+                        if (selectionMode) {
+                          setState(() {
+                            if (isSelected) {
+                              selectedImages.remove(file);
+                            } else {
+                              selectedImages.add(file);
+                            }
+                          });
+                        }
+                      },
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              file,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: double.infinity,
+                            ),
+                          ),
+                          if (selectionMode)
+                            Positioned(
+                              top: 5,
+                              right: 5,
+                              child: CircleAvatar(
+                                radius: 12,
+                                backgroundColor: isSelected
+                                    ? Colors.blue
+                                    : Colors.grey.shade400,
+                                child: Icon(
+                                  isSelected ? Icons.check : Icons.circle,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  }
+                },
+              ),
+        bottomNavigationBar: Builder(
+          builder: (context) => BottomTabs(
+            controller: DefaultTabController.of(context),
+            showCamera: true,
+            onCreateFolder: (int index) {
+              if (index == 3) {
+                _showCreateSubFolderDialog();
+              }
+            },
+            onCameraTap: _takePhoto,
+            onUploadTap: () async {
+              final photoService = PhotoService();
+              await photoService.uploadAllImagesForUser();
+            },
           ),
-          const SizedBox(height: 16),
-          FloatingActionButton(
-            heroTag: 'takePhoto',
-            onPressed: _takePhoto,
-            backgroundColor: Color(0xFF0288D1),
-            child: const Icon(Icons.camera_alt),
-          ),
-        ],
+        ),
       ),
     );
   }

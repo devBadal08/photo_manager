@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:photomanager_practice/screen/folder_screen.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -11,37 +14,74 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
 
+  Future<void> login(String email, String password) async {
+    final response = await http.post(
+      Uri.parse('http://192.168.1.5:8000/api/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email, 'password': password}),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final token = data['token'];
+      final userId = data['user']['id'];
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_token', token);
+      await prefs.setInt('user_id', userId);
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => FolderScreen()),
+      );
+    } else {
+      final error = jsonDecode(response.body)['message'] ?? "Login failed";
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text("Login Failed"),
+          content: Text(error),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text("OK"),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final textTheme = theme.textTheme;
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.orange.shade200, Colors.blue.shade200],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
+        color: theme.scaffoldBackgroundColor,
         child: Center(
           child: SingleChildScrollView(
-            padding: EdgeInsets.symmetric(horizontal: 24),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Container(
-              padding: EdgeInsets.all(24),
+              padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Color(0xFFFFFDF8),
+                color: theme.cardColor,
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 10,
-                    offset: Offset(0, 5),
-                  ),
+                  if (!isDark)
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 10,
+                      offset: Offset(0, 5),
+                    ),
                 ],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Logo Placeholder
                   Image.asset(
                     'assets/images/logo1.png',
                     width: 250,
@@ -49,38 +89,33 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   Text(
                     "Welcome Back!",
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                    style: textTheme.headlineSmall?.copyWith(fontSize: 26),
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text(
                     "Login to continue",
-                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                    style: textTheme.bodyMedium?.copyWith(fontSize: 16),
                   ),
-                  SizedBox(height: 30),
+                  const SizedBox(height: 30),
 
-                  // Email Field
+                  // Email
                   TextField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     decoration: InputDecoration(
                       labelText: "Email",
-                      prefixIcon: Icon(Icons.email),
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      prefixIcon: const Icon(Icons.email),
                     ),
                   ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                  // Password Field
+                  // Password
                   TextField(
                     controller: _passwordController,
                     obscureText: _obscurePassword,
                     decoration: InputDecoration(
                       labelText: "Password",
-                      prefixIcon: Icon(Icons.lock),
+                      prefixIcon: const Icon(Icons.lock),
                       suffixIcon: IconButton(
                         icon: Icon(
                           _obscurePassword
@@ -93,40 +128,40 @@ class _LoginScreenState extends State<LoginScreen> {
                           });
                         },
                       ),
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
                     ),
                   ),
-                  SizedBox(height: 10),
+                  const SizedBox(height: 10),
 
-                  // Forgot Password
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
                       onPressed: () {
                         // Forgot Password Logic
                       },
-                      child: Text("Forgot Password?"),
+                      child: const Text("Forgot Password?"),
                     ),
                   ),
+                  const SizedBox(height: 20),
 
-                  SizedBox(height: 20),
-
-                  // Login Button
                   ElevatedButton(
                     onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => FolderScreen()),
-                      );
+                      final email = _emailController.text.trim();
+                      final password = _passwordController.text.trim();
+
+                      if (email.isNotEmpty && password.isNotEmpty) {
+                        login(email, password);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text("Please enter email and password"),
+                          ),
+                        );
+                      }
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade600,
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(
                         horizontal: 80,
                         vertical: 16,
                       ),
@@ -135,16 +170,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       elevation: 5,
                     ),
-                    child: Text("Login", style: TextStyle(fontSize: 20)),
+                    child: const Text("Login", style: TextStyle(fontSize: 20)),
                   ),
+                  const SizedBox(height: 30),
 
-                  SizedBox(height: 30),
-
-                  // Signup Prompt
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text("Don’t have an account? "),
+                      const Text("Don’t have an account? "),
                       GestureDetector(
                         onTap: () {
                           // Navigate to Sign Up
@@ -152,7 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Text(
                           "Sign Up",
                           style: TextStyle(
-                            color: Colors.indigo,
+                            color: colorScheme.secondary,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
