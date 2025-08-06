@@ -20,12 +20,15 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   bool uploadEnabled = false;
   bool selectionMode = false;
   List<File> selectedImages = [];
+  int totalSubfolders = 0;
+  int totalImages = 0;
 
   @override
   void initState() {
     super.initState();
     requestPermissions();
     _loadItems();
+    countSubfoldersAndImages(widget.folder.path);
   }
 
   Future<void> requestPermissions() async {
@@ -37,6 +40,42 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
         await Permission.storage.request();
       }
     }
+  }
+
+  Future<void> countSubfoldersAndImages(String folderPath) async {
+    final Directory selectedDir = Directory(folderPath);
+    int subfolderCount = 0;
+    int imageCount = 0;
+
+    final List<FileSystemEntity> entities = selectedDir.listSync();
+
+    for (FileSystemEntity entity in entities) {
+      if (entity is Directory) {
+        subfolderCount++;
+        final List<FileSystemEntity> subFiles = entity.listSync();
+        for (FileSystemEntity subEntity in subFiles) {
+          if (subEntity is File &&
+              (subEntity.path.endsWith('.jpg') ||
+                  subEntity.path.endsWith('.jpeg') ||
+                  subEntity.path.endsWith('.png'))) {
+            imageCount++;
+          }
+        }
+      } else if (entity is File &&
+          (entity.path.endsWith('.jpg') ||
+              entity.path.endsWith('.jpeg') ||
+              entity.path.endsWith('.png'))) {
+        imageCount++;
+      }
+    }
+
+    print("📂 Subfolders: $subfolderCount");
+    print("🖼️ Images: $imageCount");
+
+    setState(() {
+      totalSubfolders = subfolderCount;
+      totalImages = imageCount;
+    });
   }
 
   Future<void> _uploadSelectedImages() async {
@@ -149,39 +188,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
     final dirs = entries.whereType<Directory>().toList();
 
-    // Count total images including subfolders
-    int totalImageCount = files.length;
-
-    for (var dir in dirs) {
-      totalImageCount += await _countImagesInDirectory(dir);
-    }
-
-    print("📸 Total images (including subfolders): $totalImageCount");
-
     setState(() {
       items = [...dirs, ...files];
     });
-  }
-
-  Future<int> _countImagesInDirectory(Directory dir) async {
-    int count = 0;
-
-    if (!await dir.exists()) return 0;
-
-    final contents = await dir.list(recursive: true).toList();
-
-    for (var item in contents) {
-      if (item is File) {
-        final ext = item.path.toLowerCase();
-        if (ext.endsWith('.jpg') ||
-            ext.endsWith('.jpeg') ||
-            ext.endsWith('.png')) {
-          count++;
-        }
-      }
-    }
-
-    return count;
   }
 
   Future<void> _showCreateSubFolderDialog() async {
@@ -228,7 +237,46 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(widget.folder.path.split('/').last),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  SizedBox(width: 8),
+                  Center(
+                    child: Text(
+                      'test_user3_2',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Spacer(),
+                ],
+              ),
+              SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Text('📁', style: TextStyle(fontSize: 16)),
+                      SizedBox(width: 4),
+                      Text(totalSubfolders.toString()),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Text('🖼️', style: TextStyle(fontSize: 16)),
+                      SizedBox(width: 4),
+                      Text(totalImages.toString()),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
           centerTitle: true,
           backgroundColor: const Color(0xFF1F1F1F),
           foregroundColor: Colors.white,

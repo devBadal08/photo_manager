@@ -23,6 +23,8 @@ class _FolderScreenState extends State<FolderScreen>
   bool isUploading = false;
   String userName = '';
   File? _avatarImage;
+  int folderCount = 0;
+  int imageCount = 0;
 
   int totalImages = 0;
 
@@ -50,6 +52,7 @@ class _FolderScreenState extends State<FolderScreen>
     _loadFolders();
     _loadUserName(); // Load the username
     _loadAvatar();
+    countFoldersAndImages();
   }
 
   @override
@@ -89,6 +92,59 @@ class _FolderScreenState extends State<FolderScreen>
     }
   }
 
+  Future<void> countFoldersAndImages() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('user_id');
+
+    if (userId == null) {
+      print("❌ No user ID found");
+      return;
+    }
+
+    final Directory rootDir = Directory(
+      '/storage/emulated/0/Pictures/MyApp/$userId',
+    );
+
+    if (!rootDir.existsSync()) {
+      print("📂 User folder does not exist");
+      setState(() {
+        folderCount = 0;
+        imageCount = 0;
+      });
+      return;
+    }
+
+    int totalFolders = 0;
+    int totalImages = 0;
+
+    void traverse(Directory dir) {
+      final List<FileSystemEntity> entities = dir.listSync();
+
+      for (FileSystemEntity entity in entities) {
+        if (entity is Directory) {
+          totalFolders++;
+          traverse(entity); // Recursively count subfolders
+        } else if (entity is File) {
+          if (entity.path.endsWith('.jpg') ||
+              entity.path.endsWith('.jpeg') ||
+              entity.path.endsWith('.png')) {
+            totalImages++;
+          }
+        }
+      }
+    }
+
+    traverse(rootDir);
+
+    print("📁 Total folders for $userId: $totalFolders");
+    print("🖼️ Total images for $userId: $totalImages");
+
+    setState(() {
+      folderCount = totalFolders;
+      imageCount = totalImages;
+    });
+  }
+
   Future<void> _loadFolders() async {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getInt('user_id');
@@ -109,39 +165,9 @@ class _FolderScreenState extends State<FolderScreen>
         .where((dir) => !dir.path.contains('/flutter_assets'))
         .toList();
 
-    int imageCount = 0;
-
-    for (var folder in all) {
-      imageCount += await _countImagesInDirectory(folder);
-    }
-
     setState(() {
       folders = all;
-      totalImages = imageCount;
     });
-    print("📸 Total Images (All Folders): $totalImages");
-    //await _countTotalImages();
-  }
-
-  Future<int> _countImagesInDirectory(Directory dir) async {
-    int count = 0;
-
-    if (!await dir.exists()) return 0;
-
-    final contents = await dir.list(recursive: true).toList();
-
-    for (var item in contents) {
-      if (item is File) {
-        final ext = item.path.toLowerCase();
-        if (ext.endsWith('.jpg') ||
-            ext.endsWith('.jpeg') ||
-            ext.endsWith('.png')) {
-          count++;
-        }
-      }
-    }
-
-    return count;
   }
 
   Future<void> _showCreateFolderDialog(BuildContext context) async {
@@ -276,10 +302,9 @@ class _FolderScreenState extends State<FolderScreen>
       appBar: AppBar(
         title: Column(
           children: [
-            const Text("My Folders"),
             Text(
-              "Total Images: $totalImages",
-              style: const TextStyle(fontSize: 12, color: Colors.white70),
+              "Folders ($folderCount) | Images ($imageCount)",
+              style: const TextStyle(fontSize: 16),
             ),
           ],
         ),
