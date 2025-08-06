@@ -2,7 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
-import 'package:permission_handler/permission_handler.dart';
+import 'package:photomanager_practice/screen/login_screen.dart';
+import 'package:photomanager_practice/screen/user_profile_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'photo_list_screen.dart';
@@ -20,31 +21,72 @@ class _FolderScreenState extends State<FolderScreen>
   late TabController _tabController;
   bool isAutoUploadEnabled = false;
   bool isUploading = false;
+  String userName = '';
+  File? _avatarImage;
+
+  int totalImages = 0;
+
+  Future<void> _countTotalImages() async {
+    int count = 0;
+
+    for (final folder in folders) {
+      final files = folder.listSync();
+      final imageFiles = files.where((file) {
+        final ext = path.extension(file.path).toLowerCase();
+        return file is File && ['.jpg', '.jpeg', '.png'].contains(ext);
+      });
+      count += imageFiles.length;
+    }
+
+    setState(() {
+      totalImages = count;
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-
-    _tabController.addListener(() {
-      if (_tabController.indexIsChanging) {
-        final newIndex = _tabController.index;
-
-        if (newIndex == 3) {
-          Future.delayed(Duration.zero, () {
-            _tabController.index = 0;
-            _showCreateFolderDialog(context);
-          });
-        }
-      }
-    });
     _loadFolders();
+    _loadUserName(); // Load the username
+    _loadAvatar();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadUserName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final name = prefs.getString('user_name'); // Ensure you saved it before
+    setState(() {
+      userName = name ?? 'Guest';
+    });
+  }
+
+  Future<void> _loadAvatar() async {
+    final prefs = await SharedPreferences.getInstance();
+    final avatarPath = prefs.getString('avatar_path');
+    if (avatarPath != null && File(avatarPath).existsSync()) {
+      setState(() {
+        _avatarImage = File(avatarPath);
+      });
+    }
+  }
+
+  Future<void> _pickAndSaveAvatar() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('avatar_path', picked.path);
+
+      setState(() {
+        _avatarImage = File(picked.path);
+      });
+    }
   }
 
   Future<void> _loadFolders() async {
@@ -67,9 +109,39 @@ class _FolderScreenState extends State<FolderScreen>
         .where((dir) => !dir.path.contains('/flutter_assets'))
         .toList();
 
+    int imageCount = 0;
+
+    for (var folder in all) {
+      imageCount += await _countImagesInDirectory(folder);
+    }
+
     setState(() {
       folders = all;
+      totalImages = imageCount;
     });
+    print("📸 Total Images (All Folders): $totalImages");
+    //await _countTotalImages();
+  }
+
+  Future<int> _countImagesInDirectory(Directory dir) async {
+    int count = 0;
+
+    if (!await dir.exists()) return 0;
+
+    final contents = await dir.list(recursive: true).toList();
+
+    for (var item in contents) {
+      if (item is File) {
+        final ext = item.path.toLowerCase();
+        if (ext.endsWith('.jpg') ||
+            ext.endsWith('.jpeg') ||
+            ext.endsWith('.png')) {
+          count++;
+        }
+      }
+    }
+
+    return count;
   }
 
   Future<void> _showCreateFolderDialog(BuildContext context) async {
@@ -79,7 +151,7 @@ class _FolderScreenState extends State<FolderScreen>
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Create Folder'),
         content: TextField(
           autofocus: true,
@@ -88,33 +160,41 @@ class _FolderScreenState extends State<FolderScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () async {
-              if (folderName.isEmpty || userId == null) return;
+              if (folderName.isEmpty || userId == null) {
+                Navigator.of(dialogContext).pop();
+                return;
+              }
 
               final dir = Directory(
                 '/storage/emulated/0/Pictures/MyApp/$userId/$folderName',
               );
 
-              if (await dir.exists()) {
-                Navigator.pop(context); // Close dialog first
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Folder already exists')),
-                );
-              } else {
-                try {
+              try {
+                if (await dir.exists()) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Folder already exists')),
+                  );
+                } else {
                   await dir.create(recursive: true);
-                  Navigator.pop(context); // Close dialog
-                  _loadFolders(); // Refresh UI
-                } catch (e) {
-                  //Navigator.pop(context); // Ensure dialog closes
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('Error: $e')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Folder created successfully'),
+                    ),
+                  );
                 }
+
+                Navigator.of(dialogContext).pop(); // ✅ Closes the dialog
+                _loadFolders(); // ✅ Reload folder list
+              } catch (e) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('Error: $e')));
+                Navigator.of(dialogContext).pop(); // Still close the dialog
               }
             },
             child: const Text('OK'),
@@ -194,22 +274,100 @@ class _FolderScreenState extends State<FolderScreen>
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
-        title: const Text("My Folders"),
+        title: Column(
+          children: [
+            const Text("My Folders"),
+            Text(
+              "Total Images: $totalImages",
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            ),
+          ],
+        ),
         backgroundColor: const Color(0xFF1F1F1F),
         foregroundColor: Colors.white,
         centerTitle: true,
       ),
-
       drawer: Drawer(
+        backgroundColor: Colors.black,
         child: ListView(
           padding: EdgeInsets.zero,
-          children: const [
-            DrawerHeader(
-              decoration: BoxDecoration(color: Colors.black),
-              child: Text('Menu', style: TextStyle(color: Colors.white)),
+          children: [
+            UserAccountsDrawerHeader(
+              decoration: const BoxDecoration(color: Colors.black87),
+              accountName: Text(
+                userName,
+                style: const TextStyle(color: Colors.white),
+              ),
+              accountEmail: const Text(
+                '',
+                style: TextStyle(color: Colors.white70),
+              ),
+              currentAccountPicture: GestureDetector(
+                onTap: _pickAndSaveAvatar, // 👈 Tap to change avatar
+                child: CircleAvatar(
+                  backgroundColor: Colors.orange,
+                  backgroundImage: _avatarImage != null
+                      ? FileImage(_avatarImage!)
+                      : null,
+                  child: _avatarImage == null
+                      ? const Icon(Icons.person, color: Colors.white)
+                      : null,
+                ),
+              ),
             ),
-            ListTile(title: Text('Option 1')),
-            ListTile(title: Text('Option 2')),
+            ListTile(
+              leading: const Icon(Icons.person, color: Colors.white),
+              title: const Text(
+                'User Profile',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const UserProfileScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.white),
+              title: const Text(
+                'Logout',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return AlertDialog(
+                      title: const Text("Confirm Logout"),
+                      content: const Text("Are you sure you want to logout?"),
+                      actions: [
+                        TextButton(
+                          child: const Text("Cancel"),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                        TextButton(
+                          child: const Text("Logout"),
+                          onPressed: () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.clear();
+                            Navigator.of(context).pop(); // Close the dialog
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => LoginScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -259,10 +417,17 @@ class _FolderScreenState extends State<FolderScreen>
         final folderName = folder.path.split('/').last;
 
         return GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => PhotoListScreen(folder: folder)),
-          ),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PhotoListScreen(folder: folder),
+              ),
+            ).then((_) {
+              _countTotalImages(); // Refresh when user comes back
+            });
+          },
+
           child: Column(
             children: [
               Container(

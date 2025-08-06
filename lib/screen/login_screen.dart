@@ -15,32 +15,71 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
 
   Future<void> login(String email, String password) async {
-    final response = await http.post(
-      Uri.parse('http://192.168.1.5:8000/api/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final token = data['token'];
-      final userId = data['user']['id'];
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('auth_token', token);
-      await prefs.setInt('user_id', userId);
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => FolderScreen()),
+    try {
+      final response = await http.post(
+        Uri.parse('https://badal.techstrota.com/api/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
       );
-    } else {
-      final error = jsonDecode(response.body)['message'] ?? "Login failed";
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final token = data['token'];
+        if (data['token'] == null) {
+          print("Token is null! Full response: $data");
+        }
+        final userId = data['user']['id'];
+        final userName = data['user']['name'];
+        final userEmail = data['user']['email'];
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('auth_token', token);
+        await prefs.setInt('user_id', userId);
+        await prefs.setString('user_name', userName);
+        await prefs.setString('email', userEmail);
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => FolderScreen()),
+        );
+      } else if (response.statusCode == 403) {
+        // 🔒 Handle Access Denied
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text("Access Denied"),
+            content: Text("You do not have permission to login."),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text("OK"),
+              ),
+            ],
+          ),
+        );
+      } else {
+        final error = jsonDecode(response.body)['message'] ?? "Login failed";
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text("Login Failed"),
+            content: Text(error),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text("OK"),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      print("Error: $e");
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          title: Text("Login Failed"),
-          content: Text(error),
+          title: Text("Error"),
+          content: Text("Network error: $e"),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -132,17 +171,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 10),
 
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () {
-                        // Forgot Password Logic
-                      },
-                      child: const Text("Forgot Password?"),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
                   ElevatedButton(
                     onPressed: () {
                       final email = _emailController.text.trim();
@@ -173,25 +201,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: const Text("Login", style: TextStyle(fontSize: 20)),
                   ),
                   const SizedBox(height: 30),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text("Don’t have an account? "),
-                      GestureDetector(
-                        onTap: () {
-                          // Navigate to Sign Up
-                        },
-                        child: Text(
-                          "Sign Up",
-                          style: TextStyle(
-                            color: colorScheme.secondary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),

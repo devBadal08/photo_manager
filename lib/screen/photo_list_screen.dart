@@ -149,9 +149,39 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
     final dirs = entries.whereType<Directory>().toList();
 
+    // Count total images including subfolders
+    int totalImageCount = files.length;
+
+    for (var dir in dirs) {
+      totalImageCount += await _countImagesInDirectory(dir);
+    }
+
+    print("📸 Total images (including subfolders): $totalImageCount");
+
     setState(() {
       items = [...dirs, ...files];
     });
+  }
+
+  Future<int> _countImagesInDirectory(Directory dir) async {
+    int count = 0;
+
+    if (!await dir.exists()) return 0;
+
+    final contents = await dir.list(recursive: true).toList();
+
+    for (var item in contents) {
+      if (item is File) {
+        final ext = item.path.toLowerCase();
+        if (ext.endsWith('.jpg') ||
+            ext.endsWith('.jpeg') ||
+            ext.endsWith('.png')) {
+          count++;
+        }
+      }
+    }
+
+    return count;
   }
 
   Future<void> _showCreateSubFolderDialog() async {

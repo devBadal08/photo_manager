@@ -135,7 +135,7 @@ class BottomTabs extends StatelessWidget {
     try {
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://192.168.1.5:8000/api/photos/uploadAll'),
+        Uri.parse('https://badal.techstrota.com/api/photos/uploadAll'),
       );
       request.headers['Authorization'] = 'Bearer $token';
 
@@ -205,6 +205,7 @@ class BottomTabs extends StatelessWidget {
             _resetTab(tabController);
             return;
           }
+          controller?.index = index;
         },
         tabs: [
           const Tab(icon: Icon(Icons.folder), text: 'Folders'),
