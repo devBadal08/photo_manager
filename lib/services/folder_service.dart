@@ -48,6 +48,30 @@ class FolderService {
     return {'folders': totalFolders, 'images': totalImages};
   }
 
+  Future<Map<String, int>> countSubfoldersAndImages(Directory folder) async {
+    int subfolders = 0;
+    int images = 0;
+
+    if (!await folder.exists()) {
+      return {'subfolders': 0, 'images': 0}; // or throw a friendly error
+    }
+
+    final files = folder.listSync();
+
+    for (var file in files) {
+      if (file is Directory) {
+        subfolders++;
+      } else if (file is File &&
+          (file.path.endsWith('.jpg') ||
+              file.path.endsWith('.jpeg') ||
+              file.path.endsWith('.png'))) {
+        images++;
+      }
+    }
+
+    return {'subfolders': subfolders, 'images': images};
+  }
+
   Future<List<Directory>> loadFolders() async {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getInt('user_id');
@@ -122,5 +146,36 @@ class FolderService {
         );
       },
     );
+  }
+
+  Future<bool> renameFolder(String oldPath, String newName) async {
+    try {
+      final oldDirectory = Directory(oldPath);
+      final newPath = "${oldDirectory.parent.path}/$newName";
+      final newDirectory = Directory(newPath);
+
+      if (await oldDirectory.exists()) {
+        await oldDirectory.rename(newDirectory.path);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print("Rename error: $e");
+      return false;
+    }
+  }
+
+  Future<bool> deleteFolder(String path) async {
+    try {
+      final directory = Directory(path);
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print("Delete error: $e");
+      return false;
+    }
   }
 }

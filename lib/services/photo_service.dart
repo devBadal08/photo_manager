@@ -11,7 +11,7 @@ class PhotoService {
     required String folderName,
     required String token,
   }) async {
-    final url = Uri.parse('https://badal.techstrota.com/api/photos/uploadAll');
+    final url = Uri.parse('http://192.168.1.5:8000/api/photos/uploadAll');
 
     try {
       final request = http.MultipartRequest('POST', url)

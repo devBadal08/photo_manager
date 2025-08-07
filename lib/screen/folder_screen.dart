@@ -1,8 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:photomanager_practice/screen/login_screen.dart';
-import 'package:photomanager_practice/screen/user_profile_screen.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
+import 'package:photomanager_practice/widgets/custom_drawer.dart';
 import 'photo_list_screen.dart';
 import 'package:photomanager_practice/services/folder_service.dart';
 
@@ -85,85 +84,13 @@ class _FolderScreenState extends State<FolderScreen>
       context: context,
       barrierColor: Colors.black54,
       builder: (context) {
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 12.0, top: 50.0),
-            child: Material(
-              elevation: 12,
-              borderRadius: const BorderRadius.only(
-                topRight: Radius.circular(24),
-                bottomRight: Radius.circular(24),
-                topLeft: Radius.circular(24),
-                bottomLeft: Radius.circular(24),
-              ),
-              color: Theme.of(context).colorScheme.surface,
-              child: Container(
-                width: MediaQuery.of(context).size.width * 0.75,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ListTile(
-                      leading: CircleAvatar(
-                        radius: 24,
-                        backgroundColor: Colors.deepPurple,
-                        backgroundImage: _avatarImage != null
-                            ? FileImage(_avatarImage!)
-                            : null,
-                        child: _avatarImage == null
-                            ? const Icon(Icons.person, color: Colors.white)
-                            : null,
-                      ),
-                      title: Text(
-                        userName,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                      ),
-                    ),
-                    const Divider(),
-                    ListTile(
-                      leading: const Icon(Icons.person),
-                      title: const Text("User Profile"),
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const UserProfileScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.logout),
-                      title: const Text("Logout"),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showLogoutDialog();
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+        return CustomDrawer(
+          userName: userName,
+          avatarImage: _avatarImage,
+          parentContext: context,
         );
       },
     );
-  }
-
-  void _showLogoutDialog() {
-    folderService.showLogoutDialog(context, () {
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => LoginScreen()),
-        );
-      }
-    });
   }
 
   Future<void> _showCreateFolderDialog(BuildContext context) async {
@@ -214,6 +141,92 @@ class _FolderScreenState extends State<FolderScreen>
 
   void _showCameraDisabledMessage() {
     folderService.showCameraDisabledMessage(context);
+  }
+
+  void _showRenameDialog(BuildContext context, String folderPath) {
+    final TextEditingController controller = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename Folder'),
+        content: TextField(controller: controller),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              String newName = controller.text.trim();
+              Navigator.pop(context); // Close dialog first
+
+              if (newName.isNotEmpty) {
+                final renamed = await folderService.renameFolder(
+                  folderPath,
+                  newName,
+                );
+
+                if (renamed) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Folder renamed successfully'),
+                    ),
+                  );
+                  _loadFolders();
+                  _countFoldersAndImages();
+                } else {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Rename failed')),
+                  );
+                }
+              }
+            },
+            child: const Text('Rename'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteFolder(BuildContext context, String folderPath) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Folder'),
+        content: const Text('Are you sure you want to delete this folder?'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context); // Close dialog first
+
+              final deleted = await folderService.deleteFolder(folderPath);
+              if (deleted) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('Folder deleted')));
+                _loadFolders();
+                _countFoldersAndImages();
+              } else {
+                if (!mounted) return;
+                Navigator.pop(context); // Close dialog if delete failed
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Failed to delete folder')),
+                );
+              }
+            },
+            child: const Text('Delete'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -268,52 +281,73 @@ class _FolderScreenState extends State<FolderScreen>
       );
     }
 
-    return GridView.builder(
+    return ListView.builder(
       padding: const EdgeInsets.all(12),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 1,
-      ),
       itemCount: folders.length,
       itemBuilder: (context, index) {
         final folder = folders[index];
         final folderName = folder.path.split('/').last;
 
-        return GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PhotoListScreen(folder: folder),
-              ),
-            ).then((_) {
-              _countFoldersAndImages();
-            });
-          },
-          child: Column(
-            children: [
-              Container(
-                height: 80,
-                width: 80,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(16),
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 4,
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 12,
+              horizontal: 16,
+            ),
+            leading: Icon(Icons.folder, size: 40, color: Colors.orange),
+            title: Text(
+              folderName,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            subtitle: FutureBuilder<Map<String, int>>(
+              future: folderService.countSubfoldersAndImages(folder),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Text('Loading...');
+                }
+                final subfolderCount = snapshot.data?['subfolders'] ?? 0;
+                final imageCount = snapshot.data?['images'] ?? 0;
+
+                return Text(
+                  'Subfolders: $subfolderCount\nImages: $imageCount',
+                  style: Theme.of(context).textTheme.bodySmall,
+                );
+              },
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit, color: Colors.blueAccent),
+                  onPressed: () {
+                    _showRenameDialog(context, folder.path);
+                  },
                 ),
-                child: const Icon(Icons.folder, size: 40, color: Colors.orange),
-              ),
-              const SizedBox(height: 8),
-              Flexible(
-                child: Text(
-                  folderName,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis,
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.redAccent),
+                  onPressed: () {
+                    _confirmDeleteFolder(context, folder.path);
+                  },
                 ),
-              ),
-            ],
+              ],
+            ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PhotoListScreen(folder: folder),
+                ),
+              ).then((_) {
+                _countFoldersAndImages();
+              });
+            },
           ),
         );
       },

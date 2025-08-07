@@ -94,7 +94,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('📥 Photo saved locally')));
-
       _loadItems(); // Refresh the UI
     }
   }

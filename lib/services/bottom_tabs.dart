@@ -140,7 +140,7 @@ class BottomTabs extends StatelessWidget {
     try {
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('https://badal.techstrota.com/api/photos/uploadAll'),
+        Uri.parse('http://192.168.1.5:8000/api/photos/uploadAll'),
       );
       request.headers['Authorization'] = 'Bearer $token';
 
@@ -181,7 +181,7 @@ class BottomTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final tabController = controller ?? DefaultTabController.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    //final textTheme = Theme.of(context).textTheme;
+    final textTheme = Theme.of(context).textTheme;
 
     return Material(
       color: colorScheme.surface,
