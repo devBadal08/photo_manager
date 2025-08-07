@@ -1,6 +1,3 @@
-// user_profile_screen.dart
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -13,7 +10,7 @@ class UserProfileScreen extends StatefulWidget {
 
 class _UserProfileScreenState extends State<UserProfileScreen> {
   String userName = '';
-  String? email; // if needed
+  String? email;
 
   @override
   void initState() {
@@ -25,30 +22,42 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       userName = prefs.getString('user_name') ?? 'Guest';
-      email = prefs.getString('email'); // optional
+      email = prefs.getString('email');
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('User Profile'),
-        backgroundColor: Colors.black,
+        backgroundColor: theme.appBarTheme.backgroundColor,
+        foregroundColor: theme.appBarTheme.foregroundColor,
+        elevation: theme.appBarTheme.elevation,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Card(
+          color: theme.cardColor,
           elevation: 4,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
           child: ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.person)),
-            title: Text(userName, style: const TextStyle(fontSize: 20)),
+            leading: CircleAvatar(
+              backgroundColor: theme.colorScheme.secondary.withOpacity(0.2),
+              child: Icon(Icons.person, color: theme.iconTheme.color),
+            ),
+            title: Text(
+              userName,
+              style: textTheme.headlineSmall?.copyWith(fontSize: 20),
+            ),
             subtitle: Text(
               email ?? 'No email found',
-              style: const TextStyle(fontSize: 16),
+              style: textTheme.bodyMedium?.copyWith(fontSize: 16),
             ),
           ),
         ),

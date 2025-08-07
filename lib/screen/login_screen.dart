@@ -127,13 +127,21 @@ class _LoginScreenState extends State<LoginScreen> {
                     height: 150,
                   ),
                   Text(
-                    "Welcome Back!",
-                    style: textTheme.headlineSmall?.copyWith(fontSize: 26),
+                    "Welcome!",
+                    style:
+                        textTheme.headlineSmall?.copyWith(fontSize: 26) ??
+                        const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                          inherit: true,
+                        ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     "Login to continue",
-                    style: textTheme.bodyMedium?.copyWith(fontSize: 16),
+                    style:
+                        textTheme.bodyMedium?.copyWith(fontSize: 16) ??
+                        const TextStyle(fontSize: 16, inherit: true),
                   ),
                   const SizedBox(height: 30),
 
@@ -144,6 +152,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: InputDecoration(
                       labelText: "Email",
                       prefixIcon: const Icon(Icons.email),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.deepPurple),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -166,6 +181,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             _obscurePassword = !_obscurePassword;
                           });
                         },
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.deepPurple),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                   ),

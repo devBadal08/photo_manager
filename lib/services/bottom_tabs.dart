@@ -48,7 +48,6 @@ class BottomTabs extends StatelessWidget {
       throw Exception("Image compression failed");
     }
 
-    // Convert XFile to File
     return File(compressedXFile.path);
   }
 
@@ -78,12 +77,18 @@ class BottomTabs extends StatelessWidget {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const AlertDialog(
+      builder: (_) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
         content: Row(
           children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 20),
-            Expanded(child: Text("Uploading images...")),
+            const CircularProgressIndicator(),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Text(
+                "Uploading images...",
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
           ],
         ),
       ),
@@ -151,7 +156,6 @@ class BottomTabs extends StatelessWidget {
       Navigator.pop(context); // Close loader
 
       if (response.statusCode == 200) {
-        // Optionally delete files after successful upload
         for (var file in imageFiles) {
           await file.delete();
         }
@@ -166,7 +170,7 @@ class BottomTabs extends StatelessWidget {
       }
     } catch (e) {
       Navigator.pop(context);
-      debugPrint("❌ Upload error: $e");
+      debugPrint("\u274C Upload error: $e");
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Upload failed")));
@@ -176,14 +180,16 @@ class BottomTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tabController = controller ?? DefaultTabController.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    //final textTheme = Theme.of(context).textTheme;
 
     return Material(
-      color: const Color(0xFF1F1F1F),
+      color: colorScheme.surface,
       child: TabBar(
         controller: tabController,
         onTap: (index) {
           if (index == 1) {
-            _resetTab(tabController); // Prevent tab switch
+            _resetTab(tabController);
             uploadImagesToServer(context);
             return;
           }
@@ -207,9 +213,12 @@ class BottomTabs extends StatelessWidget {
           }
           controller?.index = index;
         },
+        labelColor: colorScheme.primary,
+        unselectedLabelColor: colorScheme.onSurface,
+        indicatorColor: colorScheme.primary,
         tabs: [
-          const Tab(icon: Icon(Icons.folder), text: 'Folders'),
-          const Tab(icon: Icon(Icons.cloud_upload), text: 'Upload'),
+          Tab(icon: const Icon(Icons.folder), text: 'Folders'),
+          Tab(icon: const Icon(Icons.cloud_upload), text: 'Upload'),
           if (showCamera)
             Tab(
               icon: Icon(

@@ -2,10 +2,10 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
+
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class PhotoListScreen extends StatefulWidget {
   final Directory folder;
@@ -69,52 +69,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       }
     }
 
-    print("📂 Subfolders: $subfolderCount");
-    print("🖼️ Images: $imageCount");
-
     setState(() {
       totalSubfolders = subfolderCount;
       totalImages = imageCount;
-    });
-  }
-
-  Future<void> _uploadSelectedImages() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
-
-    if (token == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('❌ No auth token found')));
-      return;
-    }
-
-    final folderName = widget.folder.path.split('/').last;
-    int successCount = 0;
-
-    for (var image in selectedImages) {
-      final success = await PhotoService.uploadImage(
-        imageFile: image,
-        folderName: folderName,
-        token: token,
-      );
-
-      if (success) {
-        successCount++;
-      }
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '✅ Uploaded $successCount of ${selectedImages.length} selected photo(s)',
-        ),
-      ),
-    );
-
-    setState(() {
-      selectionMode = false;
-      selectedImages.clear();
     });
   }
 
@@ -129,48 +86,16 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
         await targetFolder.create(recursive: true);
       }
 
-      final imageName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final fileName = 'IMG_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final savedFile = await File(
         pickedFile.path,
-      ).copy('${targetFolder.path}/$imageName');
+      ).copy('${targetFolder.path}/$fileName');
 
-      final basePath = '/storage/emulated/0/Pictures/MyApp';
-      final relativePath = widget.folder.path.replaceFirst('$basePath/', '');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('📥 Photo saved locally')));
 
-      if (uploadEnabled) {
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString('auth_token');
-
-        if (token == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('❌ No auth token found')),
-          );
-          return;
-        }
-
-        // final success = await PhotoService.uploadImage(
-        //   imageFile: savedFile,
-        //   folderName: relativePath,
-        //   token: token,
-        // );
-
-        // if (success) {
-        //   await savedFile.delete();
-        //   ScaffoldMessenger.of(context).showSnackBar(
-        //     const SnackBar(content: Text('✅ Photo uploaded & deleted locally')),
-        //   );
-        // } else {
-        //   ScaffoldMessenger.of(
-        //     context,
-        //   ).showSnackBar(const SnackBar(content: Text('❌ Upload failed')));
-        // }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('📥 Photo saved locally only')),
-        );
-      }
-
-      _loadItems();
+      _loadItems(); // Refresh the UI
     }
   }
 
@@ -233,6 +158,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    //final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return DefaultTabController(
       length: 4,
       child: Scaffold(
@@ -242,34 +170,33 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             children: [
               Row(
                 children: [
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Center(
                     child: Text(
-                      'test_user3_2',
-                      style: TextStyle(
-                        fontSize: 20,
+                      widget.folder.path.split('/').last,
+                      style: textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                  Spacer(),
+                  const Spacer(),
                 ],
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: [
-                      Text('📁', style: TextStyle(fontSize: 16)),
-                      SizedBox(width: 4),
+                      const Text('📁'),
+                      const SizedBox(width: 4),
                       Text(totalSubfolders.toString()),
                     ],
                   ),
                   Row(
                     children: [
-                      Text('🖼️', style: TextStyle(fontSize: 16)),
-                      SizedBox(width: 4),
+                      const Text('🖼️'),
+                      const SizedBox(width: 4),
                       Text(totalImages.toString()),
                     ],
                   ),
@@ -278,8 +205,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             ],
           ),
           centerTitle: true,
-          backgroundColor: const Color(0xFF1F1F1F),
-          foregroundColor: Colors.white,
+          backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+          foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
           actions: [
             PopupMenuButton<String>(
               onSelected: (value) {
@@ -290,8 +217,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   });
                 }
               },
-              itemBuilder: (BuildContext context) => [
-                const PopupMenuItem<String>(
+              itemBuilder: (_) => [
+                const PopupMenuItem(
                   value: 'select',
                   child: Text('Select Photos to Upload'),
                 ),
@@ -302,7 +229,12 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           elevation: 4,
         ),
         body: items.isEmpty
-            ? const Center(child: Text("No files or subfolders yet"))
+            ? Center(
+                child: Text(
+                  "No files or subfolders yet",
+                  style: textTheme.bodyMedium,
+                ),
+              )
             : GridView.builder(
                 padding: const EdgeInsets.all(12),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -318,45 +250,44 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
                   if (item is Directory) {
                     return GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => PhotoListScreen(folder: item),
-                          ),
-                        );
-                      },
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PhotoListScreen(folder: item),
+                        ),
+                      ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            height: 80,
-                            width: 80,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(15),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.grey.withOpacity(0.3),
-                                  spreadRadius: 2,
-                                  blurRadius: 5,
-                                  offset: const Offset(2, 4),
+                          Expanded(
+                            child: Container(
+                              height: 80,
+                              width: 80,
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).cardColor,
+                                borderRadius: BorderRadius.circular(15),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    spreadRadius: 1,
+                                    blurRadius: 4,
+                                    offset: const Offset(2, 4),
+                                  ),
+                                ],
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.folder,
+                                  size: 40,
+                                  color: Color(0xFFF9A825),
                                 ),
-                              ],
-                            ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.folder,
-                                size: 40,
-                                color: Color(0xFFF9A825),
                               ),
                             ),
                           ),
                           const SizedBox(height: 6),
                           Text(
                             name,
-                            style: const TextStyle(
-                              fontSize: 13,
+                            style: textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -372,11 +303,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                       onTap: () {
                         if (selectionMode) {
                           setState(() {
-                            if (isSelected) {
-                              selectedImages.remove(file);
-                            } else {
-                              selectedImages.add(file);
-                            }
+                            isSelected
+                                ? selectedImages.remove(file)
+                                : selectedImages.add(file);
                           });
                         }
                       },
@@ -418,9 +347,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             controller: DefaultTabController.of(context),
             showCamera: true,
             onCreateFolder: (int index) {
-              if (index == 3) {
-                _showCreateSubFolderDialog();
-              }
+              if (index == 3) _showCreateSubFolderDialog();
             },
             onCameraTap: _takePhoto,
             onUploadTap: () async {

@@ -86,7 +86,7 @@ class PhotoService {
   Future<void> uploadAllImagesForUser() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
-    final userId = prefs.getString('user_id'); // if your backend needs it
+    //final userId = prefs.getString('user_id');
 
     if (token == null) {
       print('No token found.');

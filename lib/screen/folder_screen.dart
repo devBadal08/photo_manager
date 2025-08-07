@@ -1,12 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as path;
 import 'package:photomanager_practice/screen/login_screen.dart';
 import 'package:photomanager_practice/screen/user_profile_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'photo_list_screen.dart';
+import 'package:photomanager_practice/services/folder_service.dart';
 
 class FolderScreen extends StatefulWidget {
   const FolderScreen({super.key});
@@ -25,34 +23,22 @@ class _FolderScreenState extends State<FolderScreen>
   File? _avatarImage;
   int folderCount = 0;
   int imageCount = 0;
-
   int totalImages = 0;
 
-  Future<void> _countTotalImages() async {
-    int count = 0;
-
-    for (final folder in folders) {
-      final files = folder.listSync();
-      final imageFiles = files.where((file) {
-        final ext = path.extension(file.path).toLowerCase();
-        return file is File && ['.jpg', '.jpeg', '.png'].contains(ext);
-      });
-      count += imageFiles.length;
-    }
-
-    setState(() {
-      totalImages = count;
-    });
-  }
+  final FolderService folderService = FolderService();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _loadFolders();
-    _loadUserName(); // Load the username
-    _loadAvatar();
-    countFoldersAndImages();
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    await _loadFolders();
+    await _loadUserName();
+    await _loadAvatar();
+    await _countFoldersAndImages();
   }
 
   @override
@@ -62,118 +48,126 @@ class _FolderScreenState extends State<FolderScreen>
   }
 
   Future<void> _loadUserName() async {
-    final prefs = await SharedPreferences.getInstance();
-    final name = prefs.getString('user_name'); // Ensure you saved it before
+    final name = await folderService.loadUserName();
+    if (!mounted) return;
     setState(() {
-      userName = name ?? 'Guest';
+      userName = name;
     });
   }
 
   Future<void> _loadAvatar() async {
-    final prefs = await SharedPreferences.getInstance();
-    final avatarPath = prefs.getString('avatar_path');
-    if (avatarPath != null && File(avatarPath).existsSync()) {
-      setState(() {
-        _avatarImage = File(avatarPath);
-      });
-    }
-  }
-
-  Future<void> _pickAndSaveAvatar() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('avatar_path', picked.path);
-
-      setState(() {
-        _avatarImage = File(picked.path);
-      });
-    }
-  }
-
-  Future<void> countFoldersAndImages() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt('user_id');
-
-    if (userId == null) {
-      print("❌ No user ID found");
-      return;
-    }
-
-    final Directory rootDir = Directory(
-      '/storage/emulated/0/Pictures/MyApp/$userId',
-    );
-
-    if (!rootDir.existsSync()) {
-      print("📂 User folder does not exist");
-      setState(() {
-        folderCount = 0;
-        imageCount = 0;
-      });
-      return;
-    }
-
-    int totalFolders = 0;
-    int totalImages = 0;
-
-    void traverse(Directory dir) {
-      final List<FileSystemEntity> entities = dir.listSync();
-
-      for (FileSystemEntity entity in entities) {
-        if (entity is Directory) {
-          totalFolders++;
-          traverse(entity); // Recursively count subfolders
-        } else if (entity is File) {
-          if (entity.path.endsWith('.jpg') ||
-              entity.path.endsWith('.jpeg') ||
-              entity.path.endsWith('.png')) {
-            totalImages++;
-          }
-        }
-      }
-    }
-
-    traverse(rootDir);
-
-    print("📁 Total folders for $userId: $totalFolders");
-    print("🖼️ Total images for $userId: $totalImages");
-
+    final avatar = await folderService.loadAvatar();
+    if (!mounted) return;
     setState(() {
-      folderCount = totalFolders;
-      imageCount = totalImages;
+      _avatarImage = avatar;
+    });
+  }
+
+  Future<void> _countFoldersAndImages() async {
+    final result = await folderService.countFoldersAndImages();
+    if (!mounted) return;
+    setState(() {
+      folderCount = result['folders'] ?? 0;
+      imageCount = result['images'] ?? 0;
     });
   }
 
   Future<void> _loadFolders() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt('user_id');
-
-    if (userId == null) {
-      print("❌ No user ID found");
-      return;
-    }
-
-    final baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
-    if (!await baseDir.exists()) {
-      await baseDir.create(recursive: true);
-    }
-
-    final all = baseDir
-        .listSync()
-        .whereType<Directory>()
-        .where((dir) => !dir.path.contains('/flutter_assets'))
-        .toList();
-
+    final result = await folderService.loadFolders();
+    if (!mounted) return;
     setState(() {
-      folders = all;
+      folders = result;
+    });
+  }
+
+  void _showCustomDrawer(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (context) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 12.0, top: 50.0),
+            child: Material(
+              elevation: 12,
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+                topLeft: Radius.circular(24),
+                bottomLeft: Radius.circular(24),
+              ),
+              color: Theme.of(context).colorScheme.surface,
+              child: Container(
+                width: MediaQuery.of(context).size.width * 0.75,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: CircleAvatar(
+                        radius: 24,
+                        backgroundColor: Colors.deepPurple,
+                        backgroundImage: _avatarImage != null
+                            ? FileImage(_avatarImage!)
+                            : null,
+                        child: _avatarImage == null
+                            ? const Icon(Icons.person, color: Colors.white)
+                            : null,
+                      ),
+                      title: Text(
+                        userName,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                      ),
+                    ),
+                    const Divider(),
+                    ListTile(
+                      leading: const Icon(Icons.person),
+                      title: const Text("User Profile"),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const UserProfileScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.logout),
+                      title: const Text("Logout"),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showLogoutDialog();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showLogoutDialog() {
+    folderService.showLogoutDialog(context, () {
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => LoginScreen()),
+        );
+      }
     });
   }
 
   Future<void> _showCreateFolderDialog(BuildContext context) async {
     String folderName = '';
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? userId = prefs.getInt('user_id')?.toString();
 
     await showDialog(
       context: context,
@@ -191,37 +185,25 @@ class _FolderScreenState extends State<FolderScreen>
           ),
           ElevatedButton(
             onPressed: () async {
-              if (folderName.isEmpty || userId == null) {
+              if (folderName.isEmpty) {
                 Navigator.of(dialogContext).pop();
                 return;
               }
 
-              final dir = Directory(
-                '/storage/emulated/0/Pictures/MyApp/$userId/$folderName',
-              );
-
-              try {
-                if (await dir.exists()) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Folder already exists')),
-                  );
-                } else {
-                  await dir.create(recursive: true);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Folder created successfully'),
-                    ),
-                  );
-                }
-
-                Navigator.of(dialogContext).pop(); // ✅ Closes the dialog
-                _loadFolders(); // ✅ Reload folder list
-              } catch (e) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('Error: $e')));
-                Navigator.of(dialogContext).pop(); // Still close the dialog
+              final created = await folderService.createFolder(folderName);
+              if (created) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Folder created successfully')),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Folder already exists')),
+                );
               }
+
+              Navigator.of(dialogContext).pop();
+              _loadFolders();
+              _countFoldersAndImages();
             },
             child: const Text('OK'),
           ),
@@ -230,75 +212,14 @@ class _FolderScreenState extends State<FolderScreen>
     );
   }
 
-  Future<void> _handleCameraCapture() async {
-    if (folders.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Please create a folder first."),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    final folder = await showDialog<Directory>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text(
-          "Choose Folder",
-          style: TextStyle(color: Colors.white),
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: folders.length,
-            itemBuilder: (ctx, index) {
-              final folderName = folders[index].path.split('/').last;
-              return ListTile(
-                title: Text(
-                  folderName,
-                  style: const TextStyle(color: Colors.white),
-                ),
-                onTap: () => Navigator.pop(ctx, folders[index]),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-
-    if (folder == null) return;
-
-    final pickedFile = await ImagePicker().pickImage(
-      source: ImageSource.camera,
-    );
-    if (pickedFile == null) return;
-
-    final fileName = path.basename(pickedFile.path);
-    final savedImage = await File(
-      pickedFile.path,
-    ).copy('${folder.path}/$fileName');
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Saved to: ${savedImage.path}"),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
-
   void _showCameraDisabledMessage() {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("Camera is disabled")));
+    folderService.showCameraDisabledMessage(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Column(
           children: [
@@ -308,113 +229,32 @@ class _FolderScreenState extends State<FolderScreen>
             ),
           ],
         ),
-        backgroundColor: const Color(0xFF1F1F1F),
-        foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          onPressed: () => _showCustomDrawer(context),
+        ),
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+        foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
         centerTitle: true,
       ),
-      drawer: Drawer(
-        backgroundColor: Colors.black,
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            UserAccountsDrawerHeader(
-              decoration: const BoxDecoration(color: Colors.black87),
-              accountName: Text(
-                userName,
-                style: const TextStyle(color: Colors.white),
-              ),
-              accountEmail: const Text(
-                '',
-                style: TextStyle(color: Colors.white70),
-              ),
-              currentAccountPicture: GestureDetector(
-                onTap: _pickAndSaveAvatar, // 👈 Tap to change avatar
-                child: CircleAvatar(
-                  backgroundColor: Colors.orange,
-                  backgroundImage: _avatarImage != null
-                      ? FileImage(_avatarImage!)
-                      : null,
-                  child: _avatarImage == null
-                      ? const Icon(Icons.person, color: Colors.white)
-                      : null,
-                ),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.person, color: Colors.white),
-              title: const Text(
-                'User Profile',
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const UserProfileScreen(),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.white),
-              title: const Text(
-                'Logout',
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (BuildContext context) {
-                    return AlertDialog(
-                      title: const Text("Confirm Logout"),
-                      content: const Text("Are you sure you want to logout?"),
-                      actions: [
-                        TextButton(
-                          child: const Text("Cancel"),
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
-                        TextButton(
-                          child: const Text("Logout"),
-                          onPressed: () async {
-                            final prefs = await SharedPreferences.getInstance();
-                            await prefs.clear();
-                            Navigator.of(context).pop(); // Close the dialog
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => LoginScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    );
-                  },
-                );
-              },
-            ),
-          ],
-        ),
-      ),
+      drawer: null,
       body: TabBarView(
         controller: _tabController,
         physics: const NeverScrollableScrollPhysics(),
         children: [
           _buildFolderGrid(),
-          //_buildAutoUploadTab(),
-          const SizedBox(), // Placeholder for Upload tab
           const SizedBox(),
-          const SizedBox(), // Placeholder for Create Folder tab
+          const SizedBox(),
+          const SizedBox(),
         ],
       ),
-
       bottomNavigationBar: BottomTabs(
         controller: _tabController,
         showCamera: true,
         cameraDisabled: true,
         onCameraTap: _showCameraDisabledMessage,
         onCreateFolder: (index) {
-          _tabController.index = 0; // Always revert to Folders tab
+          _tabController.index = 0;
           _showCreateFolderDialog(context);
         },
       ),
@@ -449,17 +289,16 @@ class _FolderScreenState extends State<FolderScreen>
                 builder: (_) => PhotoListScreen(folder: folder),
               ),
             ).then((_) {
-              _countTotalImages(); // Refresh when user comes back
+              _countFoldersAndImages();
             });
           },
-
           child: Column(
             children: [
               Container(
                 height: 80,
                 width: 80,
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.2),
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Icon(Icons.folder, size: 40, color: Colors.orange),
@@ -468,10 +307,9 @@ class _FolderScreenState extends State<FolderScreen>
               Flexible(
                 child: Text(
                   folderName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -481,21 +319,4 @@ class _FolderScreenState extends State<FolderScreen>
       },
     );
   }
-
-  // Widget _buildAutoUploadTab() {
-  //   return Center(
-  //     child: Row(
-  //       mainAxisAlignment: MainAxisAlignment.center,
-  //       children: [
-  //         Switch(
-  //           value: isAutoUploadEnabled,
-  //           onChanged: (val) {
-  //             setState(() => isAutoUploadEnabled = val);
-  //           },
-  //         ),
-  //         const Text("Auto Upload", style: TextStyle(color: Colors.white70)),
-  //       ],
-  //     ),
-  //   );
-  // }
 }
