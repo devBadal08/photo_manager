@@ -22,25 +22,35 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   List<File> selectedImages = [];
   int totalSubfolders = 0;
   int totalImages = 0;
+  String selectedSegment = 'Folders';
+  List<Directory> folderItems = [];
+  List<File> imageItems = [];
 
   @override
   void initState() {
     super.initState();
-    requestPermissions();
+    //requestPermissions();
     _loadItems();
     countSubfoldersAndImages(widget.folder.path);
   }
 
-  Future<void> requestPermissions() async {
-    if (Platform.isAndroid) {
-      final androidInfo = await DeviceInfoPlugin().androidInfo;
-      if (androidInfo.version.sdkInt >= 33) {
-        await Permission.photos.request();
-      } else {
-        await Permission.storage.request();
-      }
-    }
-  }
+  // Future<void> requestPermissions() async {
+  //   if (!Platform.isAndroid) return;
+
+  //   final androidInfo = await DeviceInfoPlugin().androidInfo;
+  //   final sdkInt = androidInfo.version.sdkInt;
+
+  //   if (sdkInt >= 33) {
+  //     // Android 13 and above
+  //     await [Permission.photos, Permission.videos, Permission.audio].request();
+  //   } else if (sdkInt == 30 || sdkInt == 31 || sdkInt == 32) {
+  //     // Android 11 and 12
+  //     await Permission.manageExternalStorage.request();
+  //   } else {
+  //     // Android 10 and below
+  //     await Permission.storage.request();
+  //   }
+  // }
 
   Future<void> countSubfoldersAndImages(String folderPath) async {
     final Directory selectedDir = Directory(folderPath);
@@ -103,6 +113,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     if (!await folder.exists()) return;
 
     final entries = await folder.list().toList();
+    final dirs = entries.whereType<Directory>().toList();
     final files = entries.whereType<File>().where((f) {
       final ext = f.path.toLowerCase();
       return ext.endsWith('.jpg') ||
@@ -110,11 +121,84 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           ext.endsWith('.png');
     }).toList();
 
-    final dirs = entries.whereType<Directory>().toList();
-
     setState(() {
-      items = [...dirs, ...files];
+      folderItems = dirs;
+      imageItems = files;
+      items = [...dirs, ...files]; // optional if still needed elsewhere
     });
+  }
+
+  Future<void> _renameFolder(Directory folder) async {
+    final TextEditingController controller = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename Folder'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: 'New folder name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newName = controller.text.trim();
+              Navigator.pop(context); // Close dialog
+
+              if (newName.isNotEmpty) {
+                final newPath = '${folder.parent.path}/$newName';
+                final newDir = Directory(newPath);
+
+                if (!await newDir.exists()) {
+                  await folder.rename(newPath);
+                  _loadItems(); // Refresh UI
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Folder already exists')),
+                  );
+                }
+              }
+            },
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteFolder(Directory folder) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Folder'),
+        content: const Text('Are you sure you want to delete this folder?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete == true) {
+      try {
+        await folder.delete(recursive: true);
+        _loadItems(); // Refresh UI
+      } catch (e) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error deleting folder: $e')));
+      }
+    }
   }
 
   Future<void> _showCreateSubFolderDialog() async {
@@ -164,44 +248,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const SizedBox(width: 8),
-                  Center(
-                    child: Text(
-                      widget.folder.path.split('/').last,
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Text('📁'),
-                      const SizedBox(width: 4),
-                      Text(totalSubfolders.toString()),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      const Text('🖼️'),
-                      const SizedBox(width: 4),
-                      Text(totalImages.toString()),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+          title: Text(
+            widget.folder.path.split('/').last,
+            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           centerTitle: true,
           backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
@@ -227,120 +276,48 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           ],
           elevation: 4,
         ),
-        body: items.isEmpty
-            ? Center(
-                child: Text(
-                  "No files or subfolders yet",
-                  style: textTheme.bodyMedium,
-                ),
-              )
-            : GridView.builder(
-                padding: const EdgeInsets.all(12),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  childAspectRatio: 1,
-                ),
-                itemCount: items.length,
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  final name = item.path.split('/').last;
 
-                  if (item is Directory) {
-                    return GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PhotoListScreen(folder: item),
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Expanded(
-                            child: Container(
-                              height: 80,
-                              width: 80,
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).cardColor,
-                                borderRadius: BorderRadius.circular(15),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.1),
-                                    spreadRadius: 1,
-                                    blurRadius: 4,
-                                    offset: const Offset(2, 4),
-                                  ),
-                                ],
-                              ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.folder,
-                                  size: 40,
-                                  color: Color(0xFFF9A825),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            name,
-                            style: textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    );
-                  } else {
-                    final file = File(item.path);
-                    final isSelected = selectedImages.contains(file);
+        body: Column(
+          children: [
+            SegmentedButton<String>(
+              segments: const <ButtonSegment<String>>[
+                ButtonSegment<String>(
+                  value: 'Folders',
+                  label: Text('Folders'),
+                  icon: Icon(Icons.folder), // required in newer versions
+                ),
+                ButtonSegment<String>(
+                  value: 'Images',
+                  label: Text('Images'),
+                  icon: Icon(Icons.image), // required
+                ),
+              ],
+              selected: {selectedSegment},
+              onSelectionChanged: (Set<String> newSelection) {
+                setState(() {
+                  selectedSegment = newSelection.first;
+                });
+              },
+            ),
+            const SizedBox(height: 10),
 
-                    return GestureDetector(
-                      onTap: () {
-                        if (selectionMode) {
-                          setState(() {
-                            isSelected
-                                ? selectedImages.remove(file)
-                                : selectedImages.add(file);
-                          });
-                        }
-                      },
-                      child: Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.file(
-                              file,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              height: double.infinity,
-                            ),
-                          ),
-                          if (selectionMode)
-                            Positioned(
-                              top: 5,
-                              right: 5,
-                              child: CircleAvatar(
-                                radius: 12,
-                                backgroundColor: isSelected
-                                    ? Colors.blue
-                                    : Colors.grey.shade400,
-                                child: Icon(
-                                  isSelected ? Icons.check : Icons.circle,
-                                  size: 14,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                        ],
+            Expanded(
+              child:
+                  (selectedSegment == 'Folders' && folderItems.isEmpty) ||
+                      (selectedSegment == 'Images' && imageItems.isEmpty)
+                  ? Center(
+                      child: Text(
+                        "No ${selectedSegment.toLowerCase()} yet",
+                        style: textTheme.bodyMedium,
                       ),
-                    );
-                  }
-                },
-              ),
+                    )
+                  : selectedSegment == 'Folders'
+                  ? _buildFolderListCards() // ✅ Use the new list card builder
+                  : _buildImageGrid(imageItems),
+            ),
+          ],
+        ),
+
         bottomNavigationBar: Builder(
           builder: (context) => BottomTabs(
             controller: DefaultTabController.of(context),
@@ -357,5 +334,122 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildFolderListCards() {
+    if (folderItems.isEmpty) {
+      return const Center(
+        child: Text("No folders yet", style: TextStyle(color: Colors.white70)),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: folderItems.length,
+      itemBuilder: (context, index) {
+        final folder = folderItems[index];
+        final folderName = folder.path.split('/').last;
+
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 4,
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 12,
+              horizontal: 16,
+            ),
+            leading: const Icon(Icons.folder, size: 40, color: Colors.orange),
+            title: Text(
+              folderName,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            subtitle: FutureBuilder<Map<String, int>>(
+              future: _countSingleFolder(folder), // Custom method below
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Text('Loading...');
+                }
+                final subfolderCount = snapshot.data?['subfolders'] ?? 0;
+                final imageCount = snapshot.data?['images'] ?? 0;
+
+                return Text(
+                  'Subfolders: $subfolderCount\nImages: $imageCount',
+                  style: Theme.of(context).textTheme.bodySmall,
+                );
+              },
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit, color: Colors.blueAccent),
+                  onPressed: () => _renameFolder(folder),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.redAccent),
+                  onPressed: () => _deleteFolder(folder),
+                ),
+              ],
+            ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PhotoListScreen(folder: folder),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildImageGrid(List<File> images) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(8),
+      itemCount: images.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 4,
+        mainAxisSpacing: 4,
+      ),
+      itemBuilder: (context, index) {
+        return Image.file(images[index], fit: BoxFit.cover);
+      },
+    );
+  }
+
+  Future<Map<String, int>> _countSingleFolder(Directory folder) async {
+    int subfolderCount = 0;
+    int imageCount = 0;
+
+    final List<FileSystemEntity> entities = folder.listSync();
+    for (FileSystemEntity entity in entities) {
+      if (entity is Directory) {
+        subfolderCount++;
+        final subEntities = entity.listSync();
+        for (FileSystemEntity sub in subEntities) {
+          if (sub is File &&
+              (sub.path.endsWith('.jpg') ||
+                  sub.path.endsWith('.jpeg') ||
+                  sub.path.endsWith('.png'))) {
+            imageCount++;
+          }
+        }
+      } else if (entity is File &&
+          (entity.path.endsWith('.jpg') ||
+              entity.path.endsWith('.jpeg') ||
+              entity.path.endsWith('.png'))) {
+        imageCount++;
+      }
+    }
+
+    return {'subfolders': subfolderCount, 'images': imageCount};
   }
 }

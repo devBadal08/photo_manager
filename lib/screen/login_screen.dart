@@ -17,7 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> login(String email, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('http://192.168.1.5:8000/api/login'),
+        Uri.parse('https://badal.techstrota.com/api/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );

@@ -234,14 +234,7 @@ class _FolderScreenState extends State<FolderScreen>
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Column(
-          children: [
-            Text(
-              "Folders ($folderCount) | Images ($imageCount)",
-              style: const TextStyle(fontSize: 16),
-            ),
-          ],
-        ),
+        title: Column(children: [Text("Folders")]),
         leading: IconButton(
           icon: const Icon(Icons.menu),
           onPressed: () => _showCustomDrawer(context),

@@ -6,7 +6,7 @@ import '../screen/user_profile_screen.dart';
 import '../services/folder_service.dart';
 import '../provider/theme_provider.dart'; // if using light/dark toggle
 
-class CustomDrawer extends StatelessWidget {
+class CustomDrawer extends StatefulWidget {
   final String userName;
   final File? avatarImage;
   final BuildContext parentContext; // For showing dialogs from parent
@@ -18,12 +18,19 @@ class CustomDrawer extends StatelessWidget {
     required this.parentContext,
   });
 
+  @override
+  State<CustomDrawer> createState() => _CustomDrawerState();
+}
+
+class _CustomDrawerState extends State<CustomDrawer> {
   void _showLogoutDialog(BuildContext context) {
     FolderService().showLogoutDialog(context, () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => LoginScreen()),
-      );
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => LoginScreen()),
+        );
+      }
     });
   }
 
@@ -49,15 +56,15 @@ class CustomDrawer extends StatelessWidget {
                       leading: CircleAvatar(
                         radius: 24,
                         backgroundColor: Colors.deepPurple,
-                        backgroundImage: avatarImage != null
-                            ? FileImage(avatarImage!)
+                        backgroundImage: widget.avatarImage != null
+                            ? FileImage(widget.avatarImage!)
                             : null,
-                        child: avatarImage == null
+                        child: widget.avatarImage == null
                             ? const Icon(Icons.person, color: Colors.white)
                             : null,
                       ),
                       title: Text(
-                        userName,
+                        widget.userName,
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(
                               color: Theme.of(context).colorScheme.onSurface,
