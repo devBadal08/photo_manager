@@ -211,7 +211,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
         content: TextField(
           autofocus: true,
           decoration: const InputDecoration(hintText: 'MySubFolder'),
-          onChanged: (value) => folderName = value,
+          onChanged: (value) => folderName = value.trim(),
         ),
         actions: [
           TextButton(
@@ -220,7 +220,23 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context);
+              if (folderName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Folder name cannot be empty')),
+                );
+                return;
+              }
+
+              if (folderName.length > 20) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Folder name must be 20 characters or less'),
+                  ),
+                );
+                return;
+              }
+
+              Navigator.pop(context); // Close dialog if validation passes
               _createSubFolder(folderName);
             },
             child: const Text('OK'),

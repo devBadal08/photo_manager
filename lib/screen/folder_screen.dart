@@ -80,14 +80,15 @@ class _FolderScreenState extends State<FolderScreen>
   }
 
   void _showCustomDrawer(BuildContext context) {
+    final parentCtx = context; // store FolderScreen's context
     showDialog(
       context: context,
       barrierColor: Colors.black54,
-      builder: (context) {
+      builder: (dialogContext) {
         return CustomDrawer(
           userName: userName,
           avatarImage: _avatarImage,
-          parentContext: context,
+          parentContext: parentCtx, // ✅ now real FolderScreen context
         );
       },
     );
@@ -113,7 +114,18 @@ class _FolderScreenState extends State<FolderScreen>
           ElevatedButton(
             onPressed: () async {
               if (folderName.isEmpty) {
-                Navigator.of(dialogContext).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Folder name cannot be empty')),
+                );
+                return;
+              }
+
+              if (folderName.length > 20) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Folder name must be 20 characters or less'),
+                  ),
+                );
                 return;
               }
 

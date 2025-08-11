@@ -1,15 +1,15 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../screen/login_screen.dart';
 import '../screen/user_profile_screen.dart';
 import '../services/folder_service.dart';
-import '../provider/theme_provider.dart'; // if using light/dark toggle
+import '../provider/theme_provider.dart';
+import 'package:provider/provider.dart';
 
 class CustomDrawer extends StatefulWidget {
   final String userName;
   final File? avatarImage;
-  final BuildContext parentContext; // For showing dialogs from parent
+  final BuildContext parentContext; // FolderScreen context
 
   const CustomDrawer({
     super.key,
@@ -26,8 +26,15 @@ class _CustomDrawerState extends State<CustomDrawer> {
   void _showLogoutDialog(BuildContext context) {
     FolderService().showLogoutDialog(context, () {
       if (mounted) {
+        // 1️⃣ Close the logout confirmation dialog
+        Navigator.of(context).pop();
+
+        // 2️⃣ Close the custom drawer dialog
+        Navigator.of(widget.parentContext).pop();
+
+        // 3️⃣ Navigate to login screen using parent context
         Navigator.pushReplacement(
-          context,
+          widget.parentContext,
           MaterialPageRoute(builder: (_) => LoginScreen()),
         );
       }
@@ -78,7 +85,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(
-                          context,
+                          widget.parentContext,
                           MaterialPageRoute(
                             builder: (_) => const UserProfileScreen(),
                           ),
@@ -89,7 +96,6 @@ class _CustomDrawerState extends State<CustomDrawer> {
                       leading: const Icon(Icons.logout),
                       title: const Text("Logout"),
                       onTap: () {
-                        Navigator.pop(context);
                         _showLogoutDialog(context);
                       },
                     ),

@@ -123,28 +123,26 @@ class FolderService {
     ).showSnackBar(const SnackBar(content: Text("Camera is disabled")));
   }
 
-  void showLogoutDialog(BuildContext context, VoidCallback onLogout) {
+  void showLogoutDialog(BuildContext context, VoidCallback onConfirm) {
     showDialog(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: Text('Logout'),
-          content: Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                onLogout(); // trigger logout logic after dialog is dismissed
-              },
-              child: Text('Logout'),
-            ),
-          ],
-        );
-      },
+      builder: (ctx) => AlertDialog(
+        title: const Text("Logout"),
+        content: const Text("Are you sure you want to logout?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx), // cancel
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx); // Close dialog
+              onConfirm();
+            },
+            child: const Text("Logout"),
+          ),
+        ],
+      ),
     );
   }
 
