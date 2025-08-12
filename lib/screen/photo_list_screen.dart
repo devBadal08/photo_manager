@@ -1,9 +1,6 @@
 import 'dart:io';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
-
+import 'package:photomanager_practice/screen/scanner_page.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
 
@@ -25,6 +22,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   String selectedSegment = 'Folders';
   List<Directory> folderItems = [];
   List<File> imageItems = [];
+  bool isSearching = false;
+  String searchQuery = '';
+  List<Directory> filteredFolders = [];
+  //List<File> filteredImages = [];
 
   @override
   void initState() {
@@ -86,26 +87,17 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   }
 
   Future<void> _takePhoto() async {
-    final pickedFile = await ImagePicker().pickImage(
-      source: ImageSource.camera,
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ScannerPage(
+          saveFolder: widget.folder,
+          onScanned: () {
+            _loadItems(); // refresh image list after scan
+          },
+        ),
+      ),
     );
-
-    if (pickedFile != null) {
-      final targetFolder = widget.folder;
-      if (!await targetFolder.exists()) {
-        await targetFolder.create(recursive: true);
-      }
-
-      final fileName = 'IMG_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final savedFile = await File(
-        pickedFile.path,
-      ).copy('${targetFolder.path}/$fileName');
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('📥 Photo saved locally')));
-      _loadItems(); // Refresh the UI
-    }
   }
 
   Future<void> _loadItems() async {
@@ -125,6 +117,20 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       folderItems = dirs;
       imageItems = files;
       items = [...dirs, ...files]; // optional if still needed elsewhere
+      // Initially, filtered lists are same as original
+      filteredFolders = List.from(folderItems);
+    });
+  }
+
+  void _filterItems(String query) {
+    setState(() {
+      searchQuery = query.toLowerCase();
+      filteredFolders = folderItems
+          .where(
+            (folder) =>
+                folder.path.split('/').last.toLowerCase().contains(searchQuery),
+          )
+          .toList();
     });
   }
 
@@ -264,14 +270,57 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(
-            widget.folder.path.split('/').last,
-            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-          ),
+          title: isSearching
+              ? TextField(
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: selectedSegment == 'Folders'
+                        ? 'Search folders...'
+                        : 'Search images...',
+                    hintStyle: TextStyle(
+                      color: Theme.of(context).hintColor, // ✅ theme-aware
+                    ),
+                    border: InputBorder.none,
+                  ),
+                  style: TextStyle(
+                    color: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.color, // ✅ adapts to light/dark
+                    fontSize: 18,
+                  ),
+                  onChanged: _filterItems,
+                )
+              : Text(
+                  widget.folder.path.split('/').last,
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
           centerTitle: true,
           backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
           foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
           actions: [
+            if (!isSearching)
+              IconButton(
+                icon: const Icon(Icons.search),
+                onPressed: () {
+                  setState(() {
+                    isSearching = true;
+                    searchQuery = '';
+                  });
+                },
+              ),
+            if (isSearching)
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () {
+                  setState(() {
+                    isSearching = false;
+                    searchQuery = '';
+                    filteredFolders = List.from(folderItems);
+                  });
+                },
+              ),
             PopupMenuButton<String>(
               onSelected: (value) {
                 if (value == 'select') {
@@ -328,7 +377,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                       ),
                     )
                   : selectedSegment == 'Folders'
-                  ? _buildFolderListCards() // ✅ Use the new list card builder
+                  ? _buildFolderListCards(
+                      filteredFolders,
+                    ) // ✅ Use the new list card builder
                   : _buildImageGrid(imageItems),
             ),
           ],
@@ -352,8 +403,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     );
   }
 
-  Widget _buildFolderListCards() {
-    if (folderItems.isEmpty) {
+  Widget _buildFolderListCards(List<Directory> folders) {
+    if (folders.isEmpty) {
       return const Center(
         child: Text("No folders yet", style: TextStyle(color: Colors.white70)),
       );
@@ -361,9 +412,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
     return ListView.builder(
       padding: const EdgeInsets.all(12),
-      itemCount: folderItems.length,
+      itemCount: folders.length,
       itemBuilder: (context, index) {
-        final folder = folderItems[index];
+        final folder = folders[index];
         final folderName = folder.path.split('/').last;
 
         return Card(

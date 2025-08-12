@@ -15,6 +15,9 @@ class FolderScreen extends StatefulWidget {
 class _FolderScreenState extends State<FolderScreen>
     with SingleTickerProviderStateMixin {
   List<Directory> folders = [];
+  String searchQuery = '';
+  List<Directory> filteredFolders = []; // filtered list
+  bool isSearching = false; // toggle search
   late TabController _tabController;
   bool isAutoUploadEnabled = false;
   bool isUploading = false;
@@ -76,6 +79,18 @@ class _FolderScreenState extends State<FolderScreen>
     if (!mounted) return;
     setState(() {
       folders = result;
+      filteredFolders = result;
+    });
+  }
+
+  void _filterFolders(String query) {
+    final lowerQuery = query.toLowerCase();
+    setState(() {
+      searchQuery = query;
+      filteredFolders = folders.where((folder) {
+        final folderName = folder.path.split('/').last.toLowerCase();
+        return folderName.contains(lowerQuery);
+      }).toList();
     });
   }
 
@@ -246,11 +261,44 @@ class _FolderScreenState extends State<FolderScreen>
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Column(children: [Text("Folders")]),
+        title: isSearching
+            ? TextField(
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Search folders...',
+                  hintStyle: TextStyle(
+                    color: Theme.of(context).hintColor, // ✅ adapts to theme
+                  ),
+                  border: InputBorder.none,
+                ),
+                style: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.color, // ✅ adapts to theme
+                  fontSize: 18,
+                ),
+                onChanged: _filterFolders,
+              )
+            : const Text("Folders"),
         leading: IconButton(
           icon: const Icon(Icons.menu),
           onPressed: () => _showCustomDrawer(context),
         ),
+        actions: [
+          IconButton(
+            icon: Icon(isSearching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                if (isSearching) {
+                  // Reset search
+                  searchQuery = '';
+                  filteredFolders = folders;
+                }
+                isSearching = !isSearching;
+              });
+            },
+          ),
+        ],
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
         centerTitle: true,
@@ -280,17 +328,20 @@ class _FolderScreenState extends State<FolderScreen>
   }
 
   Widget _buildFolderGrid() {
-    if (folders.isEmpty) {
+    if (filteredFolders.isEmpty) {
       return const Center(
-        child: Text("No folders yet", style: TextStyle(color: Colors.white70)),
+        child: Text(
+          "No folders found",
+          style: TextStyle(color: Colors.white70),
+        ),
       );
     }
 
     return ListView.builder(
       padding: const EdgeInsets.all(12),
-      itemCount: folders.length,
+      itemCount: filteredFolders.length,
       itemBuilder: (context, index) {
-        final folder = folders[index];
+        final folder = filteredFolders[index];
         final folderName = folder.path.split('/').last;
 
         return Card(
@@ -304,7 +355,7 @@ class _FolderScreenState extends State<FolderScreen>
               vertical: 12,
               horizontal: 16,
             ),
-            leading: Icon(Icons.folder, size: 40, color: Colors.orange),
+            leading: const Icon(Icons.folder, size: 40, color: Colors.orange),
             title: Text(
               folderName,
               style: Theme.of(

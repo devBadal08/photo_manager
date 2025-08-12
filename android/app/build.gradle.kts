@@ -7,7 +7,16 @@ plugins {
 
 android {
     namespace = "com.example.photomanager_practice"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
+
+    defaultConfig {
+        applicationId = "com.example.photomanager_practice"
+        minSdk = 21
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
+    }
+    
     ndkVersion = "27.0.12077973"
 
     compileOptions {
