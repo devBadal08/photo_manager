@@ -1,51 +1,63 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:photo_view/photo_view.dart';
-import 'package:photo_view/photo_view_gallery.dart';
+import 'package:photomanager_practice/screen/image_editor_screen.dart';
 
-class GalleryScreen extends StatelessWidget {
-  final List<String> images; // List of image file paths or URLs
-  final int initialIndex;
+class GalleryScreen extends StatefulWidget {
+  final List<File> images;
 
-  const GalleryScreen({
-    Key? key,
-    required this.images,
-    required this.initialIndex,
-  }) : super(key: key);
+  const GalleryScreen({super.key, required this.images});
+
+  @override
+  State<GalleryScreen> createState() => _GalleryScreenState();
+}
+
+class _GalleryScreenState extends State<GalleryScreen> {
+  late List<File> images;
+
+  @override
+  void initState() {
+    super.initState();
+    images = List<File>.from(widget.images); // mutable copy
+  }
 
   @override
   Widget build(BuildContext context) {
-    PageController pageController = PageController(initialPage: initialIndex);
-
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          PhotoViewGallery.builder(
-            itemCount: images.length,
-            builder: (context, index) {
-              return PhotoViewGalleryPageOptions(
-                imageProvider: images[index].startsWith('http')
-                    ? NetworkImage(images[index])
-                    : FileImage(File(images[index])) as ImageProvider,
-                minScale: PhotoViewComputedScale.contained,
-                maxScale: PhotoViewComputedScale.covered * 3,
+      appBar: AppBar(title: const Text("Gallery")),
+      body: GridView.builder(
+        padding: const EdgeInsets.all(8),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 4,
+          mainAxisSpacing: 4,
+        ),
+        itemCount: images.length,
+        itemBuilder: (context, index) {
+          final rawPath = images[index].path;
+          final cleanPath = rawPath.split('?')[0];
+          final file = File(cleanPath);
+
+          return GestureDetector(
+            onTap: () async {
+              final updatedImages = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ImageEditorScreen(images: [file]),
+                ),
               );
+
+              if (updatedImages != null && updatedImages is List<File>) {
+                setState(() {
+                  images[index] =
+                      updatedImages[0]; // update only the edited image
+                });
+              }
             },
-            pageController: pageController,
-            scrollPhysics: const BouncingScrollPhysics(),
-            backgroundDecoration: const BoxDecoration(color: Colors.black),
-          ),
-          Positioned(
-            top: 40,
-            left: 20,
-            child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white, size: 28),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-        ],
+            child: file.existsSync()
+                ? Image.file(file, fit: BoxFit.cover)
+                : const Icon(Icons.broken_image),
+          );
+        },
       ),
     );
   }

@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:photomanager_practice/screen/scanner_page.dart';
+import 'package:camera/camera.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:photomanager_practice/screen/gallery_screen.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
+import 'package:photomanager_practice/screen/custom_camera_screen.dart';
 
 class PhotoListScreen extends StatefulWidget {
   final Directory folder;
@@ -87,17 +90,27 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   }
 
   Future<void> _takePhoto() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ScannerPage(
-          saveFolder: widget.folder,
-          onScanned: () {
-            _loadItems(); // refresh image list after scan
-          },
-        ),
-      ),
-    );
+    final List<CameraDescription> cameras = await availableCameras();
+    final capturedImagePath =
+        await Navigator.push<String>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CustomCameraScreen(
+              saveFolder: widget.folder, // your current folder
+              cameras: cameras,
+            ), // Pass params if needed
+          ),
+        ).then((_) {
+          _loadItems(); // Refresh after coming back
+        });
+
+    if (capturedImagePath != null && capturedImagePath.isNotEmpty) {
+      final File capturedImage = File(capturedImagePath);
+      final String newPath =
+          '${widget.folder.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      await capturedImage.copy(newPath); // Save into current folder
+      _loadItems(); // Refresh the list
+    }
   }
 
   Future<void> _loadItems() async {
@@ -487,7 +500,19 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
         mainAxisSpacing: 4,
       ),
       itemBuilder: (context, index) {
-        return Image.file(images[index], fit: BoxFit.cover);
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => GalleryScreen(
+                  images: images.map((file) => File(file.path)).toList(),
+                ),
+              ),
+            );
+          },
+          child: Image.file(images[index], fit: BoxFit.cover),
+        );
       },
     );
   }
