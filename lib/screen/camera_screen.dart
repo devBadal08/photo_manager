@@ -2,26 +2,27 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
-class DefaultCameraScreen extends StatefulWidget {
+class CameraScreen extends StatefulWidget {
   final Directory saveFolder; // where to save images
   final List<CameraDescription> cameras;
-  const DefaultCameraScreen({
+  const CameraScreen({
     super.key,
     required this.saveFolder,
     required this.cameras,
   });
 
   @override
-  State<DefaultCameraScreen> createState() => _DefaultCameraScreenState();
+  State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _DefaultCameraScreenState extends State<DefaultCameraScreen> {
+class _CameraScreenState extends State<CameraScreen> {
   late CameraController _controller;
   bool _isCameraInitialized = false;
   int _currentCameraIndex = 0;
   List<File> capturedImages = [];
   bool _isCapturing = false;
   List<CameraDescription> cameras = [];
+  double _thumbnailScale = 1.0;
 
   @override
   void initState() {
@@ -43,6 +44,18 @@ class _DefaultCameraScreenState extends State<DefaultCameraScreen> {
         _isCameraInitialized = true;
       });
     }
+  }
+
+  FlashMode _flashMode = FlashMode.off;
+
+  Future<void> _toggleFlash() async {
+    if (_flashMode == FlashMode.off) {
+      _flashMode = FlashMode.torch;
+    } else {
+      _flashMode = FlashMode.off;
+    }
+    await _controller.setFlashMode(_flashMode);
+    setState(() {});
   }
 
   @override
@@ -109,15 +122,42 @@ class _DefaultCameraScreenState extends State<DefaultCameraScreen> {
                         )
                       : const Center(child: CircularProgressIndicator()),
                 ),
+                // Flash mode toggle button
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    height: 100, // same height as bottom bar
+                    color: Colors.black,
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            _flashMode == FlashMode.off
+                                ? Icons.flash_off
+                                : Icons.flash_on,
+                            color: Colors.white,
+                            size: 32,
+                          ),
+                          onPressed: _toggleFlash,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Bottom control bar
                 Align(
                   alignment: Alignment.bottomCenter,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                      horizontal: 24,
+                      vertical: 50,
+                      horizontal: 50,
                     ),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.surface.withOpacity(0.3),
+                      color: Colors.black,
                       borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(20),
                         topRight: Radius.circular(20),
@@ -129,20 +169,41 @@ class _DefaultCameraScreenState extends State<DefaultCameraScreen> {
                         // Thumbnail preview clickable
                         if (capturedImages.isNotEmpty)
                           GestureDetector(
-                            onTap: () =>
-                                _openFullScreenImage(capturedImages.last),
-                            child: ClipOval(
-                              child: Image.file(
+                            onTapDown: (_) {
+                              setState(() => _thumbnailScale = 0.9); // shrink
+                            },
+                            onTapUp: (_) async {
+                              // Shrink already done in onTapDown
+                              await Future.delayed(
+                                const Duration(milliseconds: 200),
+                              ); // wait before zoom back
+                              setState(() => _thumbnailScale = 1.0);
+                              await Future.delayed(
+                                const Duration(milliseconds: 200),
+                              ); // wait for zoom back
+                              _openFullScreenImage(
                                 capturedImages.last,
-                                width: 50,
-                                height: 50,
-                                fit: BoxFit.cover,
+                              ); // navigate AFTER animation
+                            },
+                            onTapCancel: () {
+                              setState(() => _thumbnailScale = 1.0);
+                            },
+                            child: AnimatedScale(
+                              scale: _thumbnailScale,
+                              duration: const Duration(milliseconds: 200),
+                              curve: Curves.easeInOut,
+                              child: ClipOval(
+                                child: Image.file(
+                                  capturedImages.last,
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                ),
                               ),
                             ),
                           )
                         else
                           const SizedBox(width: 50),
-
                         // Capture button
                         GestureDetector(
                           onTap: _isCapturing ? null : _capturePhoto,
@@ -159,9 +220,7 @@ class _DefaultCameraScreenState extends State<DefaultCameraScreen> {
                                   ? Colors.grey.withOpacity(
                                       0.5,
                                     ) // show disabled state
-                                  : theme.colorScheme.onSurface.withOpacity(
-                                      0.2,
-                                    ),
+                                  : Colors.white,
                             ),
                           ),
                         ),
@@ -169,7 +228,7 @@ class _DefaultCameraScreenState extends State<DefaultCameraScreen> {
                         IconButton(
                           icon: Icon(
                             Icons.cameraswitch,
-                            color: theme.iconTheme.color,
+                            color: Colors.white,
                             size: 32,
                           ),
                           onPressed: _switchCamera,

@@ -22,8 +22,6 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
   late PageController _pageController;
   List<File?> previewFiles = [];
   int currentIndex = 0;
-  TransformationController _transformationController =
-      TransformationController();
 
   @override
   void initState() {
@@ -56,6 +54,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
   }
 
   Future<void> _cropImage(int index) async {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     final cropped = await ImageCropper().cropImage(
       sourcePath: previewFiles[index]?.path ?? images[index].path,
       compressFormat: ImageCompressFormat.jpg,
@@ -63,8 +64,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
       uiSettings: [
         AndroidUiSettings(
           toolbarTitle: 'Crop Image',
-          toolbarColor: Theme.of(context).colorScheme.primary,
-          toolbarWidgetColor: Colors.white,
+          toolbarColor: isDarkMode ? Colors.black : Colors.white,
+          toolbarWidgetColor: isDarkMode ? Colors.white : Colors.black,
           initAspectRatio: CropAspectRatioPreset.original,
           lockAspectRatio: false,
           aspectRatioPresets: [
@@ -99,28 +100,37 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
       imageCache.clearLiveImages();
       previewFiles[index] = null;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Image saved successfully")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text("Image saved successfully"),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+        ),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Edit Images")),
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: const Text("Edit Images"),
+        backgroundColor:
+            theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface,
+        foregroundColor:
+            theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface,
+      ),
       body: Stack(
         children: [
           PageView.builder(
             controller: _pageController,
             itemCount: images.length,
-            physics: _transformationController.value != Matrix4.identity()
-                ? const NeverScrollableScrollPhysics()
-                : const PageScrollPhysics(),
+            physics: const PageScrollPhysics(),
             onPageChanged: (index) {
               setState(() {
                 currentIndex = index;
-                _transformationController.value = Matrix4.identity();
               });
             },
             itemBuilder: (context, index) {
@@ -134,10 +144,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
 
                   setState(() {
                     if (controller.value != Matrix4.identity()) {
-                      // Smooth zoom out
                       _animateTransformation(controller, Matrix4.identity());
                     } else {
-                      // Smooth zoom in toward tap
                       final zoom = 2.5;
                       final x = -tapPosition.dx * (zoom - 1);
                       final y = -tapPosition.dy * (zoom - 1);
@@ -178,12 +186,20 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
                     ElevatedButton.icon(
                       icon: const Icon(Icons.crop),
                       label: const Text("Crop"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: theme.colorScheme.onPrimary,
+                      ),
                       onPressed: () => _cropImage(currentIndex),
                     ),
                     const SizedBox(width: 20),
                     ElevatedButton.icon(
                       icon: const Icon(Icons.save),
                       label: const Text("Save"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.colorScheme.secondary,
+                        foregroundColor: theme.colorScheme.onSecondary,
+                      ),
                       onPressed: () => _saveImage(currentIndex),
                     ),
                   ],
@@ -191,7 +207,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
                 const SizedBox(height: 10),
                 Text(
                   "${currentIndex + 1} / ${images.length}",
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: theme.colorScheme.onBackground),
                 ),
               ],
             ),
