@@ -3,26 +3,56 @@ import 'package:flutter/material.dart';
 import 'package:image_cropper/image_cropper.dart';
 
 class ImageEditorScreen extends StatefulWidget {
-  final List<File> images; // Multiple images to edit
+  final List<File> images;
+  final int initialIndex;
 
-  const ImageEditorScreen({super.key, required this.images});
+  const ImageEditorScreen({
+    super.key,
+    required this.images,
+    this.initialIndex = 0,
+  });
 
   @override
   State<ImageEditorScreen> createState() => _ImageEditorScreenState();
 }
 
-class _ImageEditorScreenState extends State<ImageEditorScreen> {
+class _ImageEditorScreenState extends State<ImageEditorScreen>
+    with TickerProviderStateMixin {
   late List<File> images;
   late PageController _pageController;
   List<File?> previewFiles = [];
-  int currentIndex = 0; // track current page
+  int currentIndex = 0;
+  TransformationController _transformationController =
+      TransformationController();
 
   @override
   void initState() {
     super.initState();
     images = List<File>.from(widget.images);
     previewFiles = List<File?>.filled(images.length, null);
-    _pageController = PageController();
+    _pageController = PageController(initialPage: widget.initialIndex);
+    currentIndex = widget.initialIndex;
+  }
+
+  void _animateTransformation(
+    TransformationController controller,
+    Matrix4 target,
+  ) {
+    final AnimationController animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+
+    final animation = Matrix4Tween(begin: controller.value, end: target)
+        .animate(
+          CurvedAnimation(parent: animationController, curve: Curves.easeInOut),
+        );
+
+    animation.addListener(() {
+      controller.value = animation.value;
+    });
+
+    animationController.forward();
   }
 
   Future<void> _cropImage(int index) async {
@@ -65,11 +95,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     final fileToSave = previewFiles[index];
     if (fileToSave != null) {
       await images[index].writeAsBytes(await fileToSave.readAsBytes());
-
-      // Clear Flutter's image cache
       imageCache.clear();
       imageCache.clearLiveImages();
-
       previewFiles[index] = null;
 
       ScaffoldMessenger.of(
@@ -87,20 +114,53 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           PageView.builder(
             controller: _pageController,
             itemCount: images.length,
-            physics: const BouncingScrollPhysics(),
+            physics: _transformationController.value != Matrix4.identity()
+                ? const NeverScrollableScrollPhysics()
+                : const PageScrollPhysics(),
             onPageChanged: (index) {
               setState(() {
-                currentIndex = index; // update current page
+                currentIndex = index;
+                _transformationController.value = Matrix4.identity();
               });
             },
             itemBuilder: (context, index) {
               final displayedImage = previewFiles[index] ?? images[index];
-              return Center(
-                child: Image.file(
-                  displayedImage,
-                  fit: BoxFit.contain,
-                  width: double.infinity,
-                  height: double.infinity,
+              final TransformationController controller =
+                  TransformationController();
+
+              return GestureDetector(
+                onDoubleTapDown: (details) {
+                  final tapPosition = details.localPosition;
+
+                  setState(() {
+                    if (controller.value != Matrix4.identity()) {
+                      // Smooth zoom out
+                      _animateTransformation(controller, Matrix4.identity());
+                    } else {
+                      // Smooth zoom in toward tap
+                      final zoom = 2.5;
+                      final x = -tapPosition.dx * (zoom - 1);
+                      final y = -tapPosition.dy * (zoom - 1);
+
+                      final zoomed = Matrix4.identity()
+                        ..translate(x, y)
+                        ..scale(zoom);
+
+                      _animateTransformation(controller, zoomed);
+                    }
+                  });
+                },
+                child: InteractiveViewer(
+                  transformationController: controller,
+                  panEnabled: true,
+                  minScale: 1.0,
+                  maxScale: 4.0,
+                  child: Image.file(
+                    displayedImage,
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    height: double.infinity,
+                  ),
                 ),
               );
             },

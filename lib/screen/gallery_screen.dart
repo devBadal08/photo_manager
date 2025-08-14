@@ -42,7 +42,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
               final updatedImages = await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => ImageEditorScreen(images: [file]),
+                  builder: (_) => ImageEditorScreen(
+                    images: images, // pass ALL images
+                    initialIndex: index,
+                  ),
                 ),
               );
 

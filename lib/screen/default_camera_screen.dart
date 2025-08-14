@@ -2,51 +2,47 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
-class CustomCameraScreen extends StatefulWidget {
+class DefaultCameraScreen extends StatefulWidget {
   final Directory saveFolder; // where to save images
   final List<CameraDescription> cameras;
-  const CustomCameraScreen({
+  const DefaultCameraScreen({
     super.key,
     required this.saveFolder,
     required this.cameras,
   });
 
   @override
-  State<CustomCameraScreen> createState() => _CustomCameraScreenState();
+  State<DefaultCameraScreen> createState() => _DefaultCameraScreenState();
 }
 
-class _CustomCameraScreenState extends State<CustomCameraScreen> {
+class _DefaultCameraScreenState extends State<DefaultCameraScreen> {
   late CameraController _controller;
   bool _isCameraInitialized = false;
   int _currentCameraIndex = 0;
   List<File> capturedImages = [];
   bool _isCapturing = false;
+  List<CameraDescription> cameras = [];
 
   @override
   void initState() {
     super.initState();
-    _initCamera(widget.cameras[_currentCameraIndex]);
+    initCamera();
   }
 
-  void _initCamera(CameraDescription cameraDescription) async {
-    // Use highest available resolution
-    _controller = CameraController(
-      cameraDescription,
-      ResolutionPreset.max, // instead of medium
-      imageFormatGroup: ImageFormatGroup.jpeg, // better compatibility & quality
-    );
-
-    await _controller.initialize();
-
-    // Optional: lock focus & exposure for better sharpness
-    try {
-      await _controller.setFocusMode(FocusMode.auto);
-      await _controller.setExposureMode(ExposureMode.auto);
-    } catch (e) {
-      debugPrint("Focus/Exposure control not supported: $e");
+  Future<void> initCamera() async {
+    cameras = await availableCameras();
+    if (cameras.isNotEmpty) {
+      _controller = CameraController(
+        cameras.first,
+        ResolutionPreset.max,
+        enableAudio: false,
+      );
+      await _controller.initialize();
+      if (!mounted) return;
+      setState(() {
+        _isCameraInitialized = true;
+      });
     }
-
-    setState(() => _isCameraInitialized = true);
   }
 
   @override
@@ -79,7 +75,7 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
 
   void _switchCamera() {
     _currentCameraIndex = (_currentCameraIndex + 1) % widget.cameras.length;
-    _initCamera(widget.cameras[_currentCameraIndex]);
+    initCamera();
   }
 
   void _openFullScreenImage(File imageFile) {
@@ -100,8 +96,19 @@ class _CustomCameraScreenState extends State<CustomCameraScreen> {
       body: _isCameraInitialized
           ? Stack(
               children: [
-                Positioned.fill(child: CameraPreview(_controller)),
-
+                // Camera preview with correct aspect ratio & fullscreen crop
+                Positioned.fill(
+                  child: _controller.value.isInitialized
+                      ? FittedBox(
+                          fit: BoxFit.cover, // fills screen without stretching
+                          child: SizedBox(
+                            width: _controller.value.previewSize!.height,
+                            height: _controller.value.previewSize!.width,
+                            child: CameraPreview(_controller),
+                          ),
+                        )
+                      : const Center(child: CircularProgressIndicator()),
+                ),
                 Align(
                   alignment: Alignment.bottomCenter,
                   child: Container(

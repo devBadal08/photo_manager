@@ -2,10 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:photomanager_practice/screen/default_camera_screen.dart';
 import 'package:photomanager_practice/screen/gallery_screen.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
-import 'package:photomanager_practice/screen/custom_camera_screen.dart';
 
 class PhotoListScreen extends StatefulWidget {
   final Directory folder;
@@ -95,8 +95,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
         await Navigator.push<String>(
           context,
           MaterialPageRoute(
-            builder: (_) => CustomCameraScreen(
-              saveFolder: widget.folder, // your current folder
+            builder: (_) => DefaultCameraScreen(
+              saveFolder: widget.folder,
               cameras: cameras,
             ), // Pass params if needed
           ),
