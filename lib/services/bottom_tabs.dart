@@ -138,24 +138,47 @@ class BottomTabs extends StatelessWidget {
     }
 
     try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('https://badal.techstrota.com/api/photos/uploadAll'),
-      );
-      request.headers['Authorization'] = 'Bearer $token';
+      const batchSize = 15; // You can change this to 10 or another number
+      bool allSuccess = true;
 
-      for (int i = 0; i < imageFiles.length; i++) {
-        request.fields['folders[$i]'] = folderNames[i];
-        request.files.add(
-          await http.MultipartFile.fromPath('images[$i]', imageFiles[i].path),
+      for (int start = 0; start < imageFiles.length; start += batchSize) {
+        final end = (start + batchSize < imageFiles.length)
+            ? start + batchSize
+            : imageFiles.length;
+
+        var request = http.MultipartRequest(
+          'POST',
+          Uri.parse('https://badal.techstrota.com/api/photos/uploadAll'),
         );
-      }
+        request.headers['Authorization'] = 'Bearer $token';
 
-      var response = await request.send();
+        for (int i = start; i < end; i++) {
+          request.fields['folders[${i - start}]'] = folderNames[i];
+          final length = await imageFiles[i].length();
+          final stream = http.ByteStream(imageFiles[i].openRead());
+          request.files.add(
+            http.MultipartFile(
+              'images[${i - start}]',
+              stream,
+              length,
+              filename: imageFiles[i].path.split('/').last,
+            ),
+          );
+        }
+
+        var response = await request.send();
+
+        if (response.statusCode != 200) {
+          allSuccess = false;
+          String err = await response.stream.bytesToString();
+          debugPrint("Batch upload failed: $err");
+          break; // Stop on first failure
+        }
+      }
 
       Navigator.pop(context); // Close loader
 
-      if (response.statusCode == 200) {
+      if (allSuccess) {
         for (var file in imageFiles) {
           await file.delete();
         }
@@ -163,10 +186,9 @@ class BottomTabs extends StatelessWidget {
           context,
         ).showSnackBar(const SnackBar(content: Text("Uploaded successfully")));
       } else {
-        String err = await response.stream.bytesToString();
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text("Failed: $err")));
+        ).showSnackBar(const SnackBar(content: Text("Some uploads failed")));
       }
     } catch (e) {
       Navigator.pop(context);
