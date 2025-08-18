@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' as path;
@@ -10,6 +11,7 @@ class BottomTabs extends StatelessWidget {
   final TabController? controller;
   final bool showCamera;
   final bool cameraDisabled;
+  final bool scanDisabled;
   final void Function(int)? onCreateFolder;
   final VoidCallback? onCameraTap;
   final VoidCallback? onUploadTap;
@@ -19,6 +21,7 @@ class BottomTabs extends StatelessWidget {
     this.controller,
     this.showCamera = true,
     this.cameraDisabled = false,
+    this.scanDisabled = false,
     this.onCreateFolder,
     this.onCameraTap,
     this.onUploadTap,
@@ -138,7 +141,7 @@ class BottomTabs extends StatelessWidget {
     }
 
     try {
-      const batchSize = 15; // You can change this to 10 or another number
+      const batchSize = 10; // You can change this to 10 or another number
       bool allSuccess = true;
 
       for (int start = 0; start < imageFiles.length; start += batchSize) {
@@ -203,7 +206,6 @@ class BottomTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final tabController = controller ?? DefaultTabController.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
     return Material(
       color: colorScheme.surface,
@@ -233,14 +235,27 @@ class BottomTabs extends StatelessWidget {
             _resetTab(tabController);
             return;
           }
+
+          // if (index == 4) {
+          //   // Handle Scan tab click
+          //   _resetTab(tabController);
+          //   Navigator.push(
+          //     context,
+          //     MaterialPageRoute(
+          //       builder: (_) => const ScanScreen(), // Your scan screen widget
+          //     ),
+          //   );
+          //   return;
+          // }
+
           controller?.index = index;
         },
         labelColor: colorScheme.primary,
         unselectedLabelColor: colorScheme.onSurface,
         indicatorColor: colorScheme.primary,
         tabs: [
-          Tab(icon: const Icon(Icons.folder), text: 'Folders'),
-          Tab(icon: const Icon(Icons.cloud_upload), text: 'Upload'),
+          const Tab(icon: Icon(Icons.folder), text: 'Folders'),
+          const Tab(icon: Icon(Icons.cloud_upload), text: 'Upload'),
           if (showCamera)
             Tab(
               icon: Icon(
@@ -250,6 +265,10 @@ class BottomTabs extends StatelessWidget {
               text: 'Camera',
             ),
           const Tab(icon: Icon(Icons.create_new_folder), text: 'Create'),
+          // const Tab(
+          //   icon: Icon(Icons.document_scanner),
+          //   text: 'Scan',
+          // ),
         ],
       ),
     );

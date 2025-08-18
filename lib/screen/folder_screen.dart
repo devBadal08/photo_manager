@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/widgets/custom_drawer.dart';
 import 'photo_list_screen.dart';
@@ -170,90 +171,77 @@ class _FolderScreenState extends State<FolderScreen>
     folderService.showCameraDisabledMessage(context);
   }
 
-  void _showRenameDialog(BuildContext context, String folderPath) {
+  Future<void> _renameFolder(Directory folder) async {
     final TextEditingController controller = TextEditingController();
 
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Rename Folder'),
-        content: TextField(controller: controller),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: 'New folder name'),
+        ),
         actions: [
           TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
             onPressed: () async {
-              String newName = controller.text.trim();
-              Navigator.pop(context); // Close dialog first
+              final newName = controller.text.trim();
+              Navigator.pop(context); // Close dialog
 
               if (newName.isNotEmpty) {
-                final renamed = await folderService.renameFolder(
-                  folderPath,
-                  newName,
-                );
+                final newPath = '${folder.parent.path}/$newName';
+                final newDir = Directory(newPath);
 
-                if (renamed) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Folder renamed successfully'),
-                    ),
-                  );
-                  _loadFolders();
-                  _countFoldersAndImages();
+                if (!await newDir.exists()) {
+                  await folder.rename(newPath);
+                  _loadFolders(); // Refresh UI
                 } else {
-                  if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Rename failed')),
+                    const SnackBar(content: Text('Folder already exists')),
                   );
                 }
               }
             },
             child: const Text('Rename'),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
         ],
       ),
     );
   }
 
-  void _confirmDeleteFolder(BuildContext context, String folderPath) {
-    showDialog(
+  Future<void> _deleteFolder(Directory folder) async {
+    final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Folder'),
         content: const Text('Are you sure you want to delete this folder?'),
         actions: [
           TextButton(
-            onPressed: () async {
-              Navigator.pop(context); // Close dialog first
-
-              final deleted = await folderService.deleteFolder(folderPath);
-              if (deleted) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Folder deleted')));
-                _loadFolders();
-                _countFoldersAndImages();
-              } else {
-                if (!mounted) return;
-                Navigator.pop(context); // Close dialog if delete failed
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Failed to delete folder')),
-                );
-              }
-            },
-            child: const Text('Delete'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
           ),
         ],
       ),
     );
+
+    if (shouldDelete == true) {
+      try {
+        await folder.delete(recursive: true);
+        _loadFolders(); // Refresh UI
+      } catch (e) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error deleting folder: $e')));
+      }
+    }
   }
 
   @override
@@ -383,13 +371,13 @@ class _FolderScreenState extends State<FolderScreen>
                 IconButton(
                   icon: const Icon(Icons.edit, color: Colors.blueAccent),
                   onPressed: () {
-                    _showRenameDialog(context, folder.path);
+                    _renameFolder(folder);
                   },
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete, color: Colors.redAccent),
                   onPressed: () {
-                    _confirmDeleteFolder(context, folder.path);
+                    _deleteFolder(folder);
                   },
                 ),
               ],
