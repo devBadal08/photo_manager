@@ -77,6 +77,14 @@ class _FolderScreenState extends State<FolderScreen>
 
   Future<void> _loadFolders() async {
     final result = await folderService.loadFolders();
+
+    // Sort folders by creation (or last modified) time descending
+    result.sort((a, b) {
+      final aStat = a.statSync();
+      final bStat = b.statSync();
+      return bStat.changed.compareTo(aStat.changed); // latest first
+    });
+
     if (!mounted) return;
     setState(() {
       folders = result;

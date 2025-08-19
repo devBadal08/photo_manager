@@ -34,7 +34,7 @@ class _CameraScreenState extends State<CameraScreen> {
     cameras = await availableCameras();
     if (cameras.isNotEmpty) {
       _controller = CameraController(
-        cameras.first,
+        cameras[_currentCameraIndex],
         ResolutionPreset.max,
         enableAudio: false,
       );
@@ -86,9 +86,12 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
-  void _switchCamera() {
-    _currentCameraIndex = (_currentCameraIndex + 1) % widget.cameras.length;
-    initCamera();
+  void _switchCamera() async {
+    if (cameras.length < 2) return; // no second camera available
+    _currentCameraIndex = (_currentCameraIndex + 1) % cameras.length;
+
+    await _controller.dispose(); // ✅ dispose old controller
+    await initCamera(); // ✅ reinitialize with new camera
   }
 
   void _openFullScreenImage(File imageFile) {
@@ -129,7 +132,7 @@ class _CameraScreenState extends State<CameraScreen> {
                   right: 0,
                   child: Container(
                     height: 100, // same height as bottom bar
-                    color: Colors.black,
+                    color: Colors.black.withOpacity(0.5),
                     padding: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -153,11 +156,11 @@ class _CameraScreenState extends State<CameraScreen> {
                   alignment: Alignment.bottomCenter,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      vertical: 50,
-                      horizontal: 50,
+                      vertical: 25,
+                      horizontal: 25,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.black,
+                      color: Colors.black.withOpacity(0.5),
                       borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(20),
                         topRight: Radius.circular(20),

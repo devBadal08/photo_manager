@@ -18,6 +18,7 @@ class PhotoListScreen extends StatefulWidget {
 
 class _PhotoListScreenState extends State<PhotoListScreen> {
   List<FileSystemEntity> items = [];
+  late PageController _pageController;
   bool uploadEnabled = false;
   bool selectionMode = false;
   List<File> selectedImages = [];
@@ -31,12 +32,21 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   List<Directory> filteredFolders = [];
   //List<File> filteredImages = [];
 
+  String get _mainFolderName => widget.folder.path.split('/').last;
+
   @override
   void initState() {
     super.initState();
     //requestPermissions();
+    _pageController = PageController();
     _loadItems();
     countSubfoldersAndImages(widget.folder.path);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   // Future<void> requestPermissions() async {
@@ -127,11 +137,21 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           ext.endsWith('.png');
     }).toList();
 
+    // ✅ remove subfolders that match parent folder name (case-insensitive)
+    final validDirs = dirs.where((d) {
+      final sub = d.path.split('/').last;
+      return sub.toLowerCase() != _mainFolderName.toLowerCase();
+    }).toList();
+
+    // (optional) keep your "latest first" sort
+    validDirs.sort(
+      (a, b) => b.statSync().changed.compareTo(a.statSync().changed),
+    );
+
     setState(() {
-      folderItems = dirs;
+      folderItems = validDirs;
       imageItems = files;
-      items = [...dirs, ...files]; // optional if still needed elsewhere
-      // Initially, filtered lists are same as original
+      items = [...validDirs, ...files];
       filteredFolders = List.from(folderItems);
     });
   }
@@ -167,20 +187,32 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           ElevatedButton(
             onPressed: () async {
               final newName = controller.text.trim();
-              Navigator.pop(context); // Close dialog
+              Navigator.pop(context);
 
-              if (newName.isNotEmpty) {
-                final newPath = '${folder.parent.path}/$newName';
-                final newDir = Directory(newPath);
+              if (newName.isEmpty) return;
 
-                if (!await newDir.exists()) {
-                  await folder.rename(newPath);
-                  _loadItems(); // Refresh UI
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Folder already exists')),
-                  );
-                }
+              // ❌ block rename to match parent folder name
+              if (newName.toLowerCase() == _mainFolderName.toLowerCase()) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      "Folder name cannot be the same as the parent folder.",
+                    ),
+                  ),
+                );
+                return;
+              }
+
+              final newPath = '${folder.parent.path}/$newName';
+              final newDir = Directory(newPath);
+
+              if (!await newDir.exists()) {
+                await folder.rename(newPath);
+                _loadItems();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Folder already exists')),
+                );
               }
             },
             child: const Text('Rename'),
@@ -269,9 +301,32 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   Future<void> _createSubFolder(String name) async {
     if (name.isEmpty) return;
     final newFolder = Directory('${widget.folder.path}/$name');
+    final candidate = name.trim();
+    if (candidate.isEmpty) return;
+
+    // ❌ prevent subfolder name equal to main folder name (case-insensitive)
+    if (candidate.toLowerCase() == _mainFolderName.toLowerCase()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Subfolder name cannot be the same as the parent folder.",
+          ),
+        ),
+      );
+      return;
+    }
+
     if (!await newFolder.exists()) {
       await newFolder.create(recursive: true);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Subfolder "$name" created')));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Subfolder "$name" already exists')),
+      );
     }
+
     _loadItems();
   }
 
@@ -363,12 +418,12 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 ButtonSegment<String>(
                   value: 'Folders',
                   label: Text('Folders'),
-                  icon: Icon(Icons.folder), // required in newer versions
+                  icon: Icon(Icons.folder),
                 ),
                 ButtonSegment<String>(
                   value: 'Images',
                   label: Text('Images'),
-                  icon: Icon(Icons.image), // required
+                  icon: Icon(Icons.image),
                 ),
               ],
               selected: {selectedSegment},
@@ -376,25 +431,47 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 setState(() {
                   selectedSegment = newSelection.first;
                 });
+                // Animate PageView when segment changes
+                _pageController.animateToPage(
+                  selectedSegment == 'Folders' ? 0 : 1,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                );
               },
             ),
+
             const SizedBox(height: 10),
 
             Expanded(
-              child:
-                  (selectedSegment == 'Folders' && folderItems.isEmpty) ||
-                      (selectedSegment == 'Images' && imageItems.isEmpty)
-                  ? Center(
-                      child: Text(
-                        "No ${selectedSegment.toLowerCase()} yet",
-                        style: textTheme.bodyMedium,
-                      ),
-                    )
-                  : selectedSegment == 'Folders'
-                  ? _buildFolderListCards(
-                      filteredFolders,
-                    ) // ✅ Use the new list card builder
-                  : _buildImageGrid(imageItems),
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: (index) {
+                  setState(() {
+                    selectedSegment = index == 0 ? 'Folders' : 'Images';
+                  });
+                },
+                children: [
+                  // --- Folders Page ---
+                  folderItems.isEmpty
+                      ? Center(
+                          child: Text(
+                            "No folders yet",
+                            style: textTheme.bodyMedium,
+                          ),
+                        )
+                      : _buildFolderListCards(filteredFolders),
+
+                  // --- Images Page ---
+                  imageItems.isEmpty
+                      ? Center(
+                          child: Text(
+                            "No images yet",
+                            style: textTheme.bodyMedium,
+                          ),
+                        )
+                      : _buildImageGrid(imageItems),
+                ],
+              ),
             ),
           ],
         ),
