@@ -319,6 +319,11 @@ class _FolderScreenState extends State<FolderScreen>
           _tabController.index = 0;
           _showCreateFolderDialog(context);
         },
+        onUploadComplete: () {
+          setState(() {
+            _loadFolders(); // ✅ re-scan folders and update counts
+          });
+        },
       ),
     );
   }

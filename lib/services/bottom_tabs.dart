@@ -15,6 +15,7 @@ class BottomTabs extends StatelessWidget {
   final void Function(int)? onCreateFolder;
   final VoidCallback? onCameraTap;
   final VoidCallback? onUploadTap;
+  final VoidCallback? onUploadComplete;
 
   const BottomTabs({
     super.key,
@@ -25,6 +26,7 @@ class BottomTabs extends StatelessWidget {
     this.onCreateFolder,
     this.onCameraTap,
     this.onUploadTap,
+    this.onUploadComplete,
   });
 
   bool isImage(String filePath) {
@@ -55,12 +57,57 @@ class BottomTabs extends StatelessWidget {
   }
 
   Future<void> uploadImagesToServer(BuildContext context) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? userId = prefs.getInt('user_id')?.toString();
+    String? token = prefs.getString('auth_token');
+
+    if (userId == null || token == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("User not logged in")));
+      return;
+    }
+
+    Directory baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
+    if (!await baseDir.exists()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("No folders found to upload")),
+      );
+      return;
+    }
+
+    // ✅ Collect images first
+    List<File> imageFiles = [];
+    List<String> folderNames = [];
+
+    for (var entity in baseDir.listSync(recursive: true)) {
+      if (entity is File && isImage(entity.path)) {
+        imageFiles.add(entity);
+        String relativePath = entity.parent.path.replaceFirst(
+          baseDir.path + '/',
+          '',
+        );
+        folderNames.add(relativePath);
+      }
+    }
+
+    if (imageFiles.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("No images found")));
+      return;
+    }
+
+    // ✅ Now we know total images
+    ValueNotifier<int> uploadedCount = ValueNotifier<int>(0);
+    int totalImages = imageFiles.length;
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Upload Confirmation"),
-        content: const Text(
-          "Do you want to upload all folders and images to the server?",
+        content: Text(
+          "Do you want to upload $totalImages images to the server?",
         ),
         actions: [
           TextButton(
@@ -80,68 +127,32 @@ class BottomTabs extends StatelessWidget {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        content: Row(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(width: 20),
-            Expanded(
-              child: Text(
-                "Uploading images...",
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) {
+        return AlertDialog(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          content: ValueListenableBuilder<int>(
+            valueListenable: uploadedCount,
+            builder: (_, count, __) {
+              return Row(
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Text(
+                      "Uploading $count / $totalImages images...",
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
 
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? userId = prefs.getInt('user_id')?.toString();
-    String? token = prefs.getString('auth_token');
-
-    if (userId == null || token == null) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("User not logged in")));
-      return;
-    }
-
-    Directory baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
-    if (!await baseDir.exists()) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("No folders found to upload")),
-      );
-      return;
-    }
-
-    List<File> imageFiles = [];
-    List<String> folderNames = [];
-
-    for (var entity in baseDir.listSync(recursive: true)) {
-      if (entity is File && isImage(entity.path)) {
-        imageFiles.add(entity);
-        String relativePath = entity.parent.path.replaceFirst(
-          baseDir.path + '/',
-          '',
-        );
-        folderNames.add(relativePath);
-      }
-    }
-
-    if (imageFiles.isEmpty) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("No images found")));
-      return;
-    }
-
     try {
-      const batchSize = 10; // You can change this to 10 or another number
+      const batchSize = 10;
       bool allSuccess = true;
 
       for (int start = 0; start < imageFiles.length; start += batchSize) {
@@ -171,11 +182,13 @@ class BottomTabs extends StatelessWidget {
 
         var response = await request.send();
 
-        if (response.statusCode != 200) {
+        if (response.statusCode == 200) {
+          uploadedCount.value = end; // ✅ update progress
+        } else {
           allSuccess = false;
           String err = await response.stream.bytesToString();
           debugPrint("Batch upload failed: $err");
-          break; // Stop on first failure
+          break;
         }
       }
 
@@ -185,6 +198,12 @@ class BottomTabs extends StatelessWidget {
         for (var file in imageFiles) {
           await file.delete();
         }
+
+        // ✅ notify parent to refresh UI
+        if (onUploadComplete != null) {
+          onUploadComplete!();
+        }
+
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text("Uploaded successfully")));
@@ -195,7 +214,7 @@ class BottomTabs extends StatelessWidget {
       }
     } catch (e) {
       Navigator.pop(context);
-      debugPrint("\u274C Upload error: $e");
+      debugPrint("❌ Upload error: $e");
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Upload failed")));

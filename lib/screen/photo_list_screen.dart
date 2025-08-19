@@ -488,6 +488,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               final photoService = PhotoService();
               await photoService.uploadAllImagesForUser();
             },
+            onUploadComplete: () {
+              setState(() {
+                _loadItems(); // ✅ re-scan folders and update counts
+              });
+            },
           ),
         ),
       ),
