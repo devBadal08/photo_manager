@@ -189,7 +189,7 @@ class BottomTabs extends StatelessWidget {
                   const SizedBox(width: 20),
                   Expanded(
                     child: Text(
-                      "Uploading ${count} / $totalImages images...",
+                      "${((count / totalImages) * 100).toStringAsFixed(0)}% uploading images",
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
