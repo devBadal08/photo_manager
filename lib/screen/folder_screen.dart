@@ -115,6 +115,10 @@ class _FolderScreenState extends State<FolderScreen>
           userName: userName,
           avatarImage: _avatarImage,
           parentContext: parentCtx, // ✅ now real FolderScreen context
+          onDelete: () async {
+            await _loadFolders();
+            await _countFoldersAndImages();
+          },
         );
       },
     );
