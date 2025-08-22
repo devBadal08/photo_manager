@@ -17,7 +17,22 @@ class BottomTabs extends StatelessWidget {
   final VoidCallback? onUploadTap;
   final VoidCallback? onUploadComplete;
 
-  const BottomTabs({
+  static ValueNotifier<Set<String>> uploadedFiles = ValueNotifier<Set<String>>(
+    {},
+  );
+
+  static Future<void> loadUploadedFiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('uploaded_files') ?? [];
+    uploadedFiles.value = saved.toSet();
+  }
+
+  static Future<void> saveUploadedFiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('uploaded_files', uploadedFiles.value.toList());
+  }
+
+  BottomTabs({
     super.key,
     this.controller,
     this.showCamera = true,
@@ -57,11 +72,13 @@ class BottomTabs extends StatelessWidget {
   }
 
   Future<void> uploadImagesToServer(BuildContext context) async {
+    await BottomTabs.loadUploadedFiles();
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? userId = prefs.getInt('user_id')?.toString();
     String? token = prefs.getString('auth_token');
 
     if (userId == null || token == null) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("User not logged in")));
@@ -70,13 +87,13 @@ class BottomTabs extends StatelessWidget {
 
     Directory baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
     if (!await baseDir.exists()) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("No folders found to upload")),
       );
       return;
     }
 
-    // ✅ Collect images first
     List<File> imageFiles = [];
     List<String> folderNames = [];
 
@@ -92,22 +109,53 @@ class BottomTabs extends StatelessWidget {
     }
 
     if (imageFiles.isEmpty) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("No images found")));
       return;
     }
 
-    // ✅ Now we know total images
-    ValueNotifier<int> uploadedCount = ValueNotifier<int>(0);
-    int totalImages = imageFiles.length;
+    // Pair files with their folders
+    List<MapEntry<File, String>> fileFolderPairs = [];
 
+    for (int i = 0; i < imageFiles.length; i++) {
+      fileFolderPairs.add(MapEntry(imageFiles[i], folderNames[i]));
+    }
+
+    // Filter only not uploaded ones
+    var notUploadedPairs = fileFolderPairs
+        .where(
+          (entry) => !BottomTabs.uploadedFiles.value.contains(
+            File(entry.key.path).absolute.path,
+          ),
+        )
+        .toList();
+
+    List<File> notUploadedFiles = notUploadedPairs.map((e) => e.key).toList();
+    List<String> notUploadedFolders = notUploadedPairs
+        .map((e) => e.value)
+        .toList();
+
+    if (notUploadedFiles.isEmpty) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("No new images to upload")));
+      return;
+    }
+
+    ValueNotifier<int> uploadedCount = ValueNotifier<int>(0);
+    int totalImages = notUploadedFiles.length;
+    int remainingImages = notUploadedFiles.length; // Pending images
+
+    if (!context.mounted) return;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Upload Confirmation"),
         content: Text(
-          "Do you want to upload $totalImages images to the server?",
+          "Do you want to upload $remainingImages images to the server?",
         ),
         actions: [
           TextButton(
@@ -124,6 +172,7 @@ class BottomTabs extends StatelessWidget {
 
     if (confirm != true) return;
 
+    if (!context.mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -133,13 +182,14 @@ class BottomTabs extends StatelessWidget {
           content: ValueListenableBuilder<int>(
             valueListenable: uploadedCount,
             builder: (_, count, __) {
+              final remaining = totalImages - count;
               return Row(
                 children: [
                   const CircularProgressIndicator(),
                   const SizedBox(width: 20),
                   Expanded(
                     child: Text(
-                      "Uploading $count / $totalImages images...",
+                      "Uploading ${count} / $totalImages images...",
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
@@ -155,10 +205,10 @@ class BottomTabs extends StatelessWidget {
       const batchSize = 10;
       bool allSuccess = true;
 
-      for (int start = 0; start < imageFiles.length; start += batchSize) {
-        final end = (start + batchSize < imageFiles.length)
+      for (int start = 0; start < notUploadedFiles.length; start += batchSize) {
+        final end = (start + batchSize < notUploadedFiles.length)
             ? start + batchSize
-            : imageFiles.length;
+            : notUploadedFiles.length;
 
         var request = http.MultipartRequest(
           'POST',
@@ -167,15 +217,18 @@ class BottomTabs extends StatelessWidget {
         request.headers['Authorization'] = 'Bearer $token';
 
         for (int i = start; i < end; i++) {
-          request.fields['folders[${i - start}]'] = folderNames[i];
-          final length = await imageFiles[i].length();
-          final stream = http.ByteStream(imageFiles[i].openRead());
+          request.fields['folders[${i - start}]'] = notUploadedFolders[i];
+          File compressed = await compressImage(notUploadedFiles[i]);
+
+          final length = await compressed.length();
+          final stream = http.ByteStream(compressed.openRead());
+
           request.files.add(
             http.MultipartFile(
               'images[${i - start}]',
               stream,
               length,
-              filename: imageFiles[i].path.split('/').last,
+              filename: compressed.path.split('/').last,
             ),
           );
         }
@@ -183,7 +236,14 @@ class BottomTabs extends StatelessWidget {
         var response = await request.send();
 
         if (response.statusCode == 200) {
-          uploadedCount.value = end; // ✅ update progress
+          for (int i = start; i < end; i++) {
+            BottomTabs.uploadedFiles.value.add(
+              File(notUploadedFiles[i].path).absolute.path,
+            ); // ✅ use notUploadedFiles
+          }
+          BottomTabs.uploadedFiles.notifyListeners();
+          await BottomTabs.saveUploadedFiles();
+          uploadedCount.value += (end - start);
         } else {
           allSuccess = false;
           String err = await response.stream.bytesToString();
@@ -192,18 +252,12 @@ class BottomTabs extends StatelessWidget {
         }
       }
 
+      if (!context.mounted) return;
       Navigator.pop(context); // Close loader
 
+      if (!context.mounted) return;
       if (allSuccess) {
-        for (var file in imageFiles) {
-          await file.delete();
-        }
-
-        // ✅ notify parent to refresh UI
-        if (onUploadComplete != null) {
-          onUploadComplete!();
-        }
-
+        if (onUploadComplete != null) onUploadComplete!();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text("Uploaded successfully")));
@@ -213,6 +267,7 @@ class BottomTabs extends StatelessWidget {
         ).showSnackBar(const SnackBar(content: Text("Some uploads failed")));
       }
     } catch (e) {
+      if (!context.mounted) return;
       Navigator.pop(context);
       debugPrint("❌ Upload error: $e");
       ScaffoldMessenger.of(

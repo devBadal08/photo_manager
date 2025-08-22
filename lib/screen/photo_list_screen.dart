@@ -41,6 +41,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     _pageController = PageController();
     _loadItems();
     countSubfoldersAndImages(widget.folder.path);
+    // ✅ Ensure uploaded files are loaded before scanning
+    BottomTabs.loadUploadedFiles().then((_) {
+      _loadItems();
+      countSubfoldersAndImages(widget.folder.path);
+    });
   }
 
   @override
@@ -574,27 +579,61 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   }
 
   Widget _buildImageGrid(List<File> images) {
-    return GridView.builder(
-      padding: const EdgeInsets.all(8),
-      itemCount: images.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
-      ),
-      itemBuilder: (context, index) {
-        return GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => GalleryScreen(
-                  images: images.map((file) => File(file.path)).toList(),
-                ),
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: BottomTabs.uploadedFiles,
+      builder: (context, uploadedSet, _) {
+        return GridView.builder(
+          padding: const EdgeInsets.all(8),
+          itemCount: images.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            crossAxisSpacing: 4,
+            mainAxisSpacing: 4,
+          ),
+          itemBuilder: (context, index) {
+            final file = images[index];
+            final isUploaded = uploadedSet.contains(file.path);
+
+            return GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => GalleryScreen(
+                      images: images.map((f) => File(f.path)).toList(),
+                    ),
+                  ),
+                );
+              },
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(file, fit: BoxFit.cover),
+                    ),
+                  ),
+                  if (isUploaded)
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.green,
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(4),
+                        child: const Icon(
+                          Icons.check,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             );
           },
-          child: Image.file(images[index], fit: BoxFit.cover),
         );
       },
     );

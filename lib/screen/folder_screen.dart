@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/widgets/custom_drawer.dart';
 import 'photo_list_screen.dart';
@@ -27,6 +27,7 @@ class _FolderScreenState extends State<FolderScreen>
   int folderCount = 0;
   int imageCount = 0;
   int totalImages = 0;
+  // late final StreamSubscription _statusCheckSub;
 
   final FolderService folderService = FolderService();
 
@@ -47,6 +48,7 @@ class _FolderScreenState extends State<FolderScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    //_statusCheckSub.cancel();
     super.dispose();
   }
 
