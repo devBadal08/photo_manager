@@ -1,5 +1,10 @@
+import 'dart:async';
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:photomanager_practice/services/auto_upload_service.dart';
+import 'package:photomanager_practice/services/bottom_tabs.dart';
+import 'package:photomanager_practice/services/photo_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../screen/login_screen.dart';
 import '../screen/user_profile_screen.dart';
@@ -27,6 +32,113 @@ class CustomDrawer extends StatefulWidget {
 
 class _CustomDrawerState extends State<CustomDrawer> {
   bool _deleteEnabled = false;
+  bool _autoUploadEnabled = false;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // restore saved toggle state
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _autoUploadEnabled = prefs.getBool("auto_upload") ?? false;
+    });
+
+    if (_autoUploadEnabled) {
+      _startAutoUploadListener();
+
+      final current = await Connectivity().checkConnectivity();
+      if (current == ConnectivityResult.wifi ||
+          current == ConnectivityResult.mobile) {
+        _uploadPendingImages();
+      }
+    }
+  }
+
+  Future<void> _saveSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool("auto_upload", _autoUploadEnabled);
+  }
+
+  void _startAutoUploadListener() {
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      results,
+    ) {
+      // `results` is a List<ConnectivityResult>
+      if (results.isNotEmpty) {
+        final result = results.first; // Pick the first available connectivity
+        if (_autoUploadEnabled &&
+            (result == ConnectivityResult.wifi ||
+                result == ConnectivityResult.mobile)) {
+          _uploadPendingImages();
+        }
+      }
+    });
+  }
+
+  void _stopAutoUploadListener() {
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
+  }
+
+  // 🔥 Auto-upload implementation
+  Future<void> _uploadPendingImages() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt('user_id')?.toString();
+      if (userId == null) return;
+
+      final userFolder = Directory(
+        "/storage/emulated/0/Pictures/MyApp/$userId",
+      );
+      if (!await userFolder.exists()) return;
+
+      final files = userFolder
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where(
+            (f) =>
+                f.path.endsWith(".jpg") ||
+                f.path.endsWith(".jpeg") ||
+                f.path.endsWith(".png"),
+          )
+          .toList();
+
+      for (var file in files) {
+        if (!BottomTabs.uploadedFiles.value.contains(file.path)) {
+          // 🔹 Upload each image
+          final photoService = PhotoService();
+          final success = await photoService.uploadImagesToServer();
+          if (success) {
+            // ✅ mark as uploaded
+            BottomTabs.uploadedFiles.value = {
+              ...BottomTabs.uploadedFiles.value,
+              file.path,
+            };
+          }
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          widget.parentContext,
+        ).showSnackBar(const SnackBar(content: Text("Auto-upload completed")));
+      }
+    } catch (e) {
+      debugPrint("❌ Auto-upload failed: $e");
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopAutoUploadListener();
+    super.dispose();
+  }
 
   Future<void> _deleteAllImages() async {
     try {
@@ -86,7 +198,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
       builder: (_) => AlertDialog(
         title: const Text("Delete All Images?"),
         content: const Text(
-          "Are you sure you want to delete all images from the app and phone storage? This action cannot be undone.",
+          "Are you sure you want to delete all images from the app? This action cannot be undo.",
         ),
         actions: [
           TextButton(
@@ -182,6 +294,17 @@ class _CustomDrawerState extends State<CustomDrawer> {
                           ),
                         );
                       },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.cloud_upload),
+                      title: const Text("Auto Upload"),
+                      trailing: Switch(
+                        value: AutoUploadService.instance.isEnabled,
+                        onChanged: (val) async {
+                          await AutoUploadService.instance.setAutoUpload(val);
+                          setState(() {}); // refresh the toggle UI
+                        },
+                      ),
                     ),
                     ListTile(
                       leading: const Icon(Icons.delete_forever),

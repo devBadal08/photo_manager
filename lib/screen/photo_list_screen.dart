@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:photomanager_practice/screen/camera_screen.dart';
 import 'package:photomanager_practice/screen/gallery_screen.dart';
 import 'package:photomanager_practice/screen/scan_screen.dart';
+import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
 
@@ -126,6 +127,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           '${widget.folder.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
       await capturedImage.copy(newPath); // Save into current folder
       _loadItems(); // Refresh the list
+    }
+
+    //final autoUpload = AutoUploadService.instance;
+    if (AutoUploadService.instance.isEnabled) {
+      await AutoUploadService.instance.uploadNow();
     }
   }
 

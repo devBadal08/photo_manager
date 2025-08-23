@@ -48,6 +48,7 @@ dependencies:
   image_cropper: ^9.1.0
   pdf: ^3.10.7
   open_file: ^3.3.2
+  connectivity_plus: ^6.1.5
 
 flutter_icons:
   android: true

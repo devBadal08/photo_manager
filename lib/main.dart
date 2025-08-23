@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'package:provider/provider.dart';
 import 'package:photomanager_practice/provider/theme_provider.dart';
 import 'package:photomanager_practice/screen/splash_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AutoUploadService.instance.init();
   runApp(
     ChangeNotifierProvider(
       create: (_) => ThemeProvider(),

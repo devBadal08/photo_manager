@@ -182,7 +182,7 @@ class BottomTabs extends StatelessWidget {
           content: ValueListenableBuilder<int>(
             valueListenable: uploadedCount,
             builder: (_, count, __) {
-              final remaining = totalImages - count;
+              //final remaining = totalImages - count;
               return Row(
                 children: [
                   const CircularProgressIndicator(),
