@@ -54,7 +54,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
       final current = await Connectivity().checkConnectivity();
       if (current == ConnectivityResult.wifi ||
           current == ConnectivityResult.mobile) {
-        _uploadPendingImages();
+        await AutoUploadService.instance.setAutoUpload(true);
       }
     }
   }
@@ -68,14 +68,14 @@ class _CustomDrawerState extends State<CustomDrawer> {
     _connectivitySubscription?.cancel();
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       results,
-    ) {
+    ) async {
       // `results` is a List<ConnectivityResult>
       if (results.isNotEmpty) {
         final result = results.first; // Pick the first available connectivity
         if (_autoUploadEnabled &&
             (result == ConnectivityResult.wifi ||
                 result == ConnectivityResult.mobile)) {
-          _uploadPendingImages();
+          await AutoUploadService.instance.setAutoUpload(true);
         }
       }
     });
@@ -86,58 +86,16 @@ class _CustomDrawerState extends State<CustomDrawer> {
     _connectivitySubscription = null;
   }
 
-  // 🔥 Auto-upload implementation
-  Future<void> _uploadPendingImages() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getInt('user_id')?.toString();
-      if (userId == null) return;
-
-      final userFolder = Directory(
-        "/storage/emulated/0/Pictures/MyApp/$userId",
-      );
-      if (!await userFolder.exists()) return;
-
-      final files = userFolder
-          .listSync(recursive: true)
-          .whereType<File>()
-          .where(
-            (f) =>
-                f.path.endsWith(".jpg") ||
-                f.path.endsWith(".jpeg") ||
-                f.path.endsWith(".png"),
-          )
-          .toList();
-
-      for (var file in files) {
-        if (!BottomTabs.uploadedFiles.value.contains(file.path)) {
-          // 🔹 Upload each image
-          final photoService = PhotoService();
-          final success = await photoService.uploadImagesToServer();
-          if (success) {
-            // ✅ mark as uploaded
-            BottomTabs.uploadedFiles.value = {
-              ...BottomTabs.uploadedFiles.value,
-              file.path,
-            };
-          }
-        }
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          widget.parentContext,
-        ).showSnackBar(const SnackBar(content: Text("Auto-upload completed")));
-      }
-    } catch (e) {
-      debugPrint("❌ Auto-upload failed: $e");
-    }
-  }
-
   @override
   void dispose() {
     _stopAutoUploadListener();
     super.dispose();
+  }
+
+  Future<Set<String>> _getUploadedFiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList("uploaded_files") ?? [];
+    return list.toSet();
   }
 
   Future<void> _deleteAllImages() async {
@@ -146,33 +104,39 @@ class _CustomDrawerState extends State<CustomDrawer> {
       String? userId = prefs.getInt('user_id')?.toString();
       final directory = Directory("/storage/emulated/0/Pictures/MyApp/$userId");
 
+      final uploaded = await _getUploadedFiles();
+
       if (await directory.exists()) {
-        // Loop through ALL files in directory + subfolders
-        if (widget.onDelete != null) {
-          widget.onDelete!(); // 🔥 Tell parent to refresh UI
-        }
-        await for (var entity in directory.list(
-          recursive: true,
-          followLinks: false,
-        )) {
+        int deleted = 0, skipped = 0;
+
+        await for (var entity in directory.list(recursive: true)) {
           if (entity is File) {
-            final path = entity.path.toLowerCase();
+            final path = entity.path;
+
             if (path.endsWith(".jpg") ||
                 path.endsWith(".jpeg") ||
                 path.endsWith(".png")) {
-              await entity.delete();
+              if (uploaded.contains(path)) {
+                await entity.delete();
+                deleted++;
+              } else {
+                skipped++;
+              }
             }
           }
         }
 
-        // ✅ now call refresh AFTER files are deleted
         if (widget.onDelete != null) {
           widget.onDelete!();
         }
 
         if (mounted) {
           ScaffoldMessenger.of(widget.parentContext).showSnackBar(
-            const SnackBar(content: Text("All images deleted successfully")),
+            SnackBar(
+              content: Text(
+                "Deleted $deleted photos. Skipped $skipped not uploaded.",
+              ),
+            ),
           );
         }
       } else {
