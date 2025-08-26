@@ -341,6 +341,64 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     _loadItems();
   }
 
+  Future<void> _deleteSelectedImages() async {
+    if (selectedImages.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("No images selected")));
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Uploaded Images"),
+        content: Text(
+          "Delete ${selectedImages.length} selected images?\n\n"
+          "Only images that are uploaded will be deleted.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final uploadedSet = BottomTabs.uploadedFiles.value;
+      int deletedCount = 0;
+
+      for (final file in selectedImages) {
+        if (uploadedSet.contains(file.path)) {
+          // ✅ only delete uploaded ones
+          try {
+            await file.delete();
+            deletedCount++;
+          } catch (e) {
+            debugPrint("Error deleting ${file.path}: $e");
+          }
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Deleted $deletedCount uploaded images")),
+      );
+
+      setState(() {
+        selectionMode = false;
+        selectedImages.clear();
+      });
+
+      _loadItems(); // refresh grid
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     //final colorScheme = Theme.of(context).colorScheme;
@@ -400,6 +458,12 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     filteredFolders = List.from(folderItems);
                   });
                 },
+              ),
+            // ✅ New Delete button in selection mode
+            if (selectionMode)
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red),
+                onPressed: _deleteSelectedImages,
               ),
             PopupMenuButton<String>(
               onSelected: (value) {
@@ -487,23 +551,25 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           ],
         ),
 
-        bottomNavigationBar: Builder(
-          builder: (context) => BottomTabs(
-            controller: DefaultTabController.of(context),
-            showCamera: true,
-            onCreateFolder: (int index) {
-              if (index == 3) _showCreateSubFolderDialog();
-            },
-            onCameraTap: _takePhoto,
-            onUploadTap: () async {
-              final photoService = PhotoService();
-              await photoService.uploadAllImagesForUser();
-            },
-            onUploadComplete: () {
-              setState(() {
-                _loadItems(); // ✅ re-scan folders and update counts
-              });
-            },
+        bottomNavigationBar: SafeArea(
+          child: Builder(
+            builder: (context) => BottomTabs(
+              controller: DefaultTabController.of(context),
+              showCamera: true,
+              onCreateFolder: (int index) {
+                if (index == 3) _showCreateSubFolderDialog();
+              },
+              onCameraTap: _takePhoto,
+              onUploadTap: () async {
+                final photoService = PhotoService();
+                await photoService.uploadAllImagesForUser();
+              },
+              onUploadComplete: () {
+                setState(() {
+                  _loadItems(); // ✅ re-scan folders and update counts
+                });
+              },
+            ),
           ),
         ),
       ),
@@ -599,17 +665,34 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           itemBuilder: (context, index) {
             final file = images[index];
             final isUploaded = uploadedSet.contains(file.path);
+            final isSelected = selectedImages.contains(file);
 
             return GestureDetector(
+              onLongPress: () {
+                setState(() {
+                  selectionMode = true;
+                  selectedImages.add(file);
+                });
+              },
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => GalleryScreen(
-                      images: images.map((f) => File(f.path)).toList(),
+                if (selectionMode) {
+                  setState(() {
+                    if (isSelected) {
+                      selectedImages.remove(file);
+                    } else {
+                      selectedImages.add(file);
+                    }
+                  });
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => GalleryScreen(
+                        images: images.map((f) => File(f.path)).toList(),
+                      ),
                     ),
-                  ),
-                );
+                  );
+                }
               },
               child: Stack(
                 children: [
@@ -619,6 +702,33 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                       child: Image.file(file, fit: BoxFit.cover),
                     ),
                   ),
+
+                  // ✅ Semi-transparent overlay when in selection mode
+                  // if (selectionMode && isSelected)
+                  //   Positioned.fill(
+                  //     child: Container(color: Colors.blue.withOpacity(0.4)),
+                  //   ),
+
+                  // ✅ Checkbox for selection mode
+                  if (selectionMode)
+                    Positioned(
+                      child: Checkbox(
+                        value: isSelected,
+                        onChanged: (checked) {
+                          setState(() {
+                            if (checked == true) {
+                              selectedImages.add(file);
+                            } else {
+                              selectedImages.remove(file);
+                            }
+                          });
+                        },
+                        activeColor: Colors.blue,
+                        checkColor: Colors.white,
+                      ),
+                    ),
+
+                  // ✅ Uploaded checkmark (green)
                   if (isUploaded)
                     Positioned(
                       right: 6,

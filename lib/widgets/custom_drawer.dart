@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:photomanager_practice/screen/shared_with_me_screen.dart';
 import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
@@ -284,6 +285,19 @@ class _CustomDrawerState extends State<CustomDrawer> {
                           }
                         },
                       ),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.folder_shared),
+                      title: const Text("Shared With Me"),
+                      onTap: () {
+                        Navigator.pop(context); // close drawer
+                        Navigator.push(
+                          widget.parentContext,
+                          MaterialPageRoute(
+                            builder: (_) => const SharedWithMeScreen(),
+                          ),
+                        );
+                      },
                     ),
                     ListTile(
                       leading: const Icon(Icons.logout),

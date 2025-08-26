@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
+import 'package:photomanager_practice/services/folder_share_service.dart';
 import 'package:photomanager_practice/widgets/custom_drawer.dart';
 import 'photo_list_screen.dart';
 import 'package:photomanager_practice/services/folder_service.dart';
@@ -227,6 +228,76 @@ class _FolderScreenState extends State<FolderScreen>
     );
   }
 
+  Future<void> _shareFolder(Directory folder) async {
+    final TextEditingController controller = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Share Folder'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Enter User Email to share with',
+          ),
+          keyboardType: TextInputType.emailAddress,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final email = controller.text.trim();
+              if (email.isEmpty || !email.contains("@")) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('Invalid Email')));
+                return;
+              }
+
+              // Get folder ID from server
+              final folderId = await FolderShareService.getFolderId(folder);
+              if (folderId == null) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'This folder hasn’t been uploaded to the server yet. '
+                      'Please upload it first to share.',
+                    ),
+                  ),
+                );
+                return;
+              }
+
+              // Share folder via service
+              final success = await FolderShareService().shareFolderByEmail(
+                folderId,
+                email,
+              );
+
+              Navigator.pop(context); // Close dialog
+
+              // Show message based on success/failure
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    success
+                        ? 'Folder shared successfully!'
+                        : 'Invalid email or failed to share',
+                  ),
+                ),
+              );
+            },
+            child: const Text('Share'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _deleteFolder(Directory folder) async {
     final shouldDelete = await showDialog<bool>(
       context: context,
@@ -316,20 +387,22 @@ class _FolderScreenState extends State<FolderScreen>
           const SizedBox(),
         ],
       ),
-      bottomNavigationBar: BottomTabs(
-        controller: _tabController,
-        showCamera: true,
-        cameraDisabled: true,
-        onCameraTap: _showCameraDisabledMessage,
-        onCreateFolder: (index) {
-          _tabController.index = 0;
-          _showCreateFolderDialog(context);
-        },
-        onUploadComplete: () {
-          setState(() {
-            _loadFolders(); // ✅ re-scan folders and update counts
-          });
-        },
+      bottomNavigationBar: SafeArea(
+        child: BottomTabs(
+          controller: _tabController,
+          showCamera: true,
+          cameraDisabled: true,
+          onCameraTap: _showCameraDisabledMessage,
+          onCreateFolder: (index) {
+            _tabController.index = 0;
+            _showCreateFolderDialog(context);
+          },
+          onUploadComplete: () {
+            setState(() {
+              _loadFolders(); // ✅ re-scan folders and update counts
+            });
+          },
+        ),
       ),
     );
   }
@@ -391,6 +464,12 @@ class _FolderScreenState extends State<FolderScreen>
                   icon: const Icon(Icons.edit, color: Colors.blueAccent),
                   onPressed: () {
                     _renameFolder(folder);
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.share, color: Colors.green),
+                  onPressed: () {
+                    _shareFolder(folder);
                   },
                 ),
                 IconButton(
