@@ -278,6 +278,7 @@ class _FolderScreenState extends State<FolderScreen>
                 email,
               );
 
+              if (!mounted) return;
               Navigator.pop(context); // Close dialog
 
               // Show message based on success/failure
