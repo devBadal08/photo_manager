@@ -290,10 +290,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 return;
               }
 
-              if (folderName.length > 20) {
+              if (folderName.length > 50) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Folder name must be 20 characters or less'),
+                    content: Text('Folder name must be 50 characters or less'),
                   ),
                 );
                 return;

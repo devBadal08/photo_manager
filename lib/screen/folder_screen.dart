@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
 import 'package:photomanager_practice/widgets/custom_drawer.dart';
+import 'package:share_plus/share_plus.dart';
 import 'photo_list_screen.dart';
 import 'package:photomanager_practice/services/folder_service.dart';
 
@@ -151,10 +153,10 @@ class _FolderScreenState extends State<FolderScreen>
                 return;
               }
 
-              if (folderName.length > 20) {
+              if (folderName.length > 50) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Folder name must be 20 characters or less'),
+                    content: Text('Folder name must be 50 characters or less'),
                   ),
                 );
                 return;
@@ -229,70 +231,116 @@ class _FolderScreenState extends State<FolderScreen>
   }
 
   Future<void> _shareFolder(Directory folder) async {
-    final TextEditingController controller = TextEditingController();
-
-    await showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Share Folder'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: 'Enter User Email to share with',
-          ),
-          keyboardType: TextInputType.emailAddress,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final email = controller.text.trim();
-              if (email.isEmpty || !email.contains("@")) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Invalid Email')));
-                return;
-              }
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Wrap(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.email, color: Colors.blue),
+            title: const Text("Share via Email (App Share)"),
+            onTap: () async {
+              Navigator.pop(ctx); // close bottom sheet
+              final TextEditingController controller = TextEditingController();
 
-              // Get folder ID from server
-              final folderId = await FolderShareService.getFolderId(folder);
-              if (folderId == null) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'This folder hasn’t been uploaded to the server yet. '
-                      'Please upload it first to share.',
+              await showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Share Folder'),
+                  content: TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      hintText: 'Enter User Email to share with',
                     ),
+                    keyboardType: TextInputType.emailAddress,
                   ),
-                );
-                return;
-              }
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final email = controller.text.trim();
+                        if (email.isEmpty || !email.contains("@")) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Invalid Email')),
+                          );
+                          return;
+                        }
 
-              // Share folder via service
-              final success = await FolderShareService().shareFolderByEmail(
-                folderId,
-                email,
-              );
+                        // 📌 Get folder ID from server
+                        final folderId = await FolderShareService.getFolderId(
+                          folder,
+                        );
+                        if (folderId == null) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'This folder hasn’t been uploaded yet. Upload first to share.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
 
-              if (!mounted) return;
-              Navigator.pop(context); // Close dialog
+                        final success = await FolderShareService()
+                            .shareFolderByEmail(folderId, email);
 
-              // Show message based on success/failure
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    success
-                        ? 'Folder shared successfully!'
-                        : 'Invalid email or failed to share',
-                  ),
+                        if (!mounted) return;
+                        Navigator.pop(context);
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              success
+                                  ? 'Folder shared successfully!'
+                                  : 'Failed to share',
+                            ),
+                          ),
+                        );
+                      },
+                      child: const Text('Share'),
+                    ),
+                  ],
                 ),
               );
             },
-            child: const Text('Share'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.share, color: Colors.green),
+            title: const Text("Share via WhatsApp / Bluetooth"),
+            onTap: () async {
+              Navigator.pop(ctx); // close bottom sheet
+
+              final files = folder
+                  .listSync()
+                  .whereType<File>()
+                  .where(
+                    (f) =>
+                        f.path.endsWith(".jpg") ||
+                        f.path.endsWith(".jpeg") ||
+                        f.path.endsWith(".png"),
+                  )
+                  .map((f) => XFile(f.path))
+                  .toList();
+
+              if (files.isNotEmpty) {
+                await Share.shareXFiles(
+                  files,
+                  text: "📂 Sharing folder: ${folder.path.split('/').last}",
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("No images found in this folder"),
+                  ),
+                );
+              }
+            },
           ),
         ],
       ),
