@@ -51,6 +51,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   @override
   void dispose() {
+    imageCache.clear();
+    imageCache.clearLiveImages();
     _pageController.dispose();
     super.dispose();
   }
@@ -139,31 +141,32 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     final folder = widget.folder;
     if (!await folder.exists()) return;
 
-    final entries = await folder.list().toList();
-    final dirs = entries.whereType<Directory>().toList();
-    final files = entries.whereType<File>().where((f) {
-      final ext = f.path.toLowerCase();
-      return ext.endsWith('.jpg') ||
-          ext.endsWith('.jpeg') ||
-          ext.endsWith('.png');
-    }).toList();
+    final dirs = <Directory>[];
+    final files = <File>[];
 
-    // ✅ remove subfolders that match parent folder name (case-insensitive)
-    final validDirs = dirs.where((d) {
-      final sub = d.path.split('/').last;
-      return sub.toLowerCase() != _mainFolderName.toLowerCase();
-    }).toList();
+    await for (final entity in folder.list()) {
+      if (entity is Directory) {
+        final sub = entity.path.split('/').last;
+        if (sub.toLowerCase() != _mainFolderName.toLowerCase()) {
+          dirs.add(entity);
+        }
+      } else if (entity is File) {
+        final ext = entity.path.toLowerCase();
+        if (ext.endsWith('.jpg') ||
+            ext.endsWith('.jpeg') ||
+            ext.endsWith('.png')) {
+          files.add(entity);
+        }
+      }
+    }
 
-    // (optional) keep your "latest first" sort
-    validDirs.sort(
-      (a, b) => b.statSync().changed.compareTo(a.statSync().changed),
-    );
+    dirs.sort((a, b) => b.statSync().changed.compareTo(a.statSync().changed));
 
     setState(() {
-      folderItems = validDirs;
+      folderItems = dirs;
       imageItems = files;
-      items = [...validDirs, ...files];
-      filteredFolders = List.from(folderItems);
+      items = [...dirs, ...files];
+      filteredFolders = List.from(dirs);
     });
   }
 
@@ -687,9 +690,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => GalleryScreen(
-                        images: images.map((f) => File(f.path)).toList(),
-                      ),
+                      builder: (_) => GalleryScreen(images: images),
                     ),
                   );
                 }
@@ -699,15 +700,16 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   Positioned.fill(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.file(file, fit: BoxFit.cover),
+                      child: Image.file(
+                        file,
+                        fit: BoxFit.cover,
+                        cacheWidth: 300,
+                        cacheHeight: 300,
+                        errorBuilder: (_, __, ___) =>
+                            const Icon(Icons.broken_image),
+                      ),
                     ),
                   ),
-
-                  // ✅ Semi-transparent overlay when in selection mode
-                  // if (selectionMode && isSelected)
-                  //   Positioned.fill(
-                  //     child: Container(color: Colors.blue.withOpacity(0.4)),
-                  //   ),
 
                   // ✅ Checkbox for selection mode
                   if (selectionMode)

@@ -33,32 +33,36 @@ class _GalleryScreenState extends State<GalleryScreen> {
         ),
         itemCount: images.length,
         itemBuilder: (context, index) {
-          final rawPath = images[index].path;
-          final cleanPath = rawPath.split('?')[0];
-          final file = File(cleanPath);
+          final file = images[index];
 
           return GestureDetector(
             onTap: () async {
-              final updatedImages = await Navigator.push(
+              final editedResult = await Navigator.push<Map<String, dynamic>?>(
                 context,
                 MaterialPageRoute(
                   builder: (_) => ImageEditorScreen(
                     images: images, // pass ALL images
-                    initialIndex: index,
+                    initialIndex: index, // start from tapped image
                   ),
                 ),
               );
 
-              if (updatedImages != null && updatedImages is List<File>) {
+              // Expect result like: { "index": i, "file": editedFile }
+              if (editedResult != null &&
+                  editedResult["index"] != null &&
+                  editedResult["file"] != null) {
                 setState(() {
-                  images[index] =
-                      updatedImages[0]; // update only the edited image
+                  images[editedResult["index"]] = editedResult["file"];
                 });
               }
             },
-            child: file.existsSync()
-                ? Image.file(file, fit: BoxFit.cover)
-                : const Icon(Icons.broken_image),
+            child: Image.file(
+              file,
+              fit: BoxFit.cover,
+              cacheWidth: 300,
+              cacheHeight: 300,
+              errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+            ),
           );
         },
       ),
