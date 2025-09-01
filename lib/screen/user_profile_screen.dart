@@ -47,7 +47,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             // 🖼️ Big company logo with border
             if (companyLogo != null && companyLogo!.isNotEmpty)
               Container(
-                height: 180,
+                height: 100,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),

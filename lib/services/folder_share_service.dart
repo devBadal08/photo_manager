@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:photomanager_practice/services/photo_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FolderShareService {
@@ -115,5 +117,60 @@ class FolderShareService {
       return jsonDecode(response.body);
     }
     return [];
+  }
+
+  // 🚀 Upload photo from gallery to shared folder
+  Future<bool> uploadPhoto(int folderId) async {
+    final token = await _getToken();
+    if (token == null) return false;
+
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile == null) return false;
+
+    var request = http.MultipartRequest(
+      "POST",
+      Uri.parse("$baseUrl/folders/$folderId/upload"),
+    );
+    request.headers["Authorization"] = "Bearer $token";
+    request.files.add(
+      await http.MultipartFile.fromPath("photo", pickedFile.path),
+    );
+
+    final response = await request.send();
+    return response.statusCode == 200;
+  }
+
+  // 📸 Capture photo with camera & upload
+  Future<bool> captureAndUpload(int folderId) async {
+    final token = await _getToken();
+    if (token == null) return false;
+
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.camera);
+
+    if (pickedFile == null) return false;
+
+    var request = http.MultipartRequest(
+      "POST",
+      Uri.parse("$baseUrl/folders/$folderId/upload"),
+    );
+    request.headers["Authorization"] = "Bearer $token";
+    request.files.add(
+      await http.MultipartFile.fromPath("photo", pickedFile.path),
+    );
+
+    final response = await request.send();
+    return response.statusCode == 200;
+  }
+
+  Future<bool> uploadSharedFolderImages() async {
+    try {
+      return await PhotoService().uploadImagesToServer();
+    } catch (e) {
+      print("❌ Error uploading shared folder images: $e");
+      return false;
+    }
   }
 }

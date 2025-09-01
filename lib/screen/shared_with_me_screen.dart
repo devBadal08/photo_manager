@@ -35,7 +35,7 @@ class SharedWithMeScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 elevation: 4,
-                child: ExpansionTile(
+                child: ListTile(
                   leading: const Icon(
                     Icons.folder_shared,
                     size: 40,
@@ -43,35 +43,17 @@ class SharedWithMeScreen extends StatelessWidget {
                   ),
                   title: Text(folder['name'] ?? "Unnamed Folder"),
                   subtitle: Text("Shared by User ID: ${share['shared_by']}"),
-                  children: [
-                    if (folder['photos'] != null && folder['photos'].isNotEmpty)
-                      SizedBox(
-                        height: 120,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: folder['photos'].length,
-                          itemBuilder: (context, i) {
-                            final photo = folder['photos'][i];
-                            return Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Image.network(
-                                photo['url'], // 👈 backend provides full URL
-                                width: 100,
-                                height: 100,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) =>
-                                    const Icon(Icons.broken_image),
-                              ),
-                            );
-                          },
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SharedFolderPhotosScreen(
+                          folderName: folder['name'] ?? "Unnamed Folder",
+                          photos: photos,
                         ),
-                      )
-                    else
-                      const Padding(
-                        padding: EdgeInsets.all(8.0),
-                        child: Text("No photos in this folder"),
                       ),
-                  ],
+                    );
+                  },
                 ),
               );
             },
