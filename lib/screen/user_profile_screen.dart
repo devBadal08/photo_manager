@@ -11,6 +11,7 @@ class UserProfileScreen extends StatefulWidget {
 class _UserProfileScreenState extends State<UserProfileScreen> {
   String userName = '';
   String? email;
+  String? companyLogo;
 
   @override
   void initState() {
@@ -23,6 +24,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     setState(() {
       userName = prefs.getString('user_name') ?? 'Guest';
       email = prefs.getString('email');
+      companyLogo = prefs.getString('company_logo');
     });
   }
 
@@ -38,28 +40,67 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         foregroundColor: theme.appBarTheme.foregroundColor,
         elevation: theme.appBarTheme.elevation,
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
-        child: Card(
-          color: theme.cardColor,
-          elevation: 4,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: theme.colorScheme.secondary.withOpacity(0.2),
-              child: Icon(Icons.person, color: theme.iconTheme.color),
+        child: Column(
+          children: [
+            // 🖼️ Big company logo with border
+            if (companyLogo != null && companyLogo!.isNotEmpty)
+              Container(
+                height: 180,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.deepPurple, // border color
+                    width: 3, // border thickness
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.network(
+                    companyLogo!,
+                    fit: BoxFit.contain, // or BoxFit.cover if you prefer
+                  ),
+                ),
+              )
+            else
+              Container(
+                height: 180,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondary.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.deepPurple, width: 3),
+                ),
+                child: Icon(
+                  Icons.business,
+                  size: 80,
+                  color: theme.iconTheme.color,
+                ),
+              ),
+
+            const SizedBox(height: 20),
+
+            // 👤 User info card
+            Card(
+              color: theme.cardColor,
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ListTile(
+                title: Text(
+                  userName,
+                  style: textTheme.headlineSmall?.copyWith(fontSize: 20),
+                ),
+                subtitle: Text(
+                  email ?? 'No email found',
+                  style: textTheme.bodyMedium?.copyWith(fontSize: 16),
+                ),
+              ),
             ),
-            title: Text(
-              userName,
-              style: textTheme.headlineSmall?.copyWith(fontSize: 20),
-            ),
-            subtitle: Text(
-              email ?? 'No email found',
-              style: textTheme.bodyMedium?.copyWith(fontSize: 16),
-            ),
-          ),
+          ],
         ),
       ),
     );

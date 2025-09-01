@@ -31,12 +31,17 @@ class _LoginScreenState extends State<LoginScreen> {
         final userId = data['user']['id'];
         final userName = data['user']['name'];
         final userEmail = data['user']['email'];
+        final rawLogo = data['user']['company']['company_logo'];
+        final baseUrl =
+            "http://192.168.1.4:8000/storage/"; // 👈 use your machine/server IP
+        final companyLogo = rawLogo != null ? "$baseUrl$rawLogo" : null;
 
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('auth_token', token);
+        await prefs.setString('auth_token', token ?? '');
         await prefs.setInt('user_id', userId);
-        await prefs.setString('user_name', userName);
-        await prefs.setString('email', userEmail);
+        await prefs.setString('user_name', userName ?? '');
+        await prefs.setString('email', userEmail ?? '');
+        await prefs.setString('company_logo', companyLogo ?? '');
 
         Navigator.push(
           context,

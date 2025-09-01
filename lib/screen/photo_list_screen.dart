@@ -144,6 +144,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     final dirs = <Directory>[];
     final files = <File>[];
 
+    // ✅ remove subfolders that match parent folder name (case-insensitive)
     await for (final entity in folder.list()) {
       if (entity is Directory) {
         final sub = entity.path.split('/').last;
@@ -160,6 +161,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       }
     }
 
+    // Sort folders by last modified date (newest first)
     dirs.sort((a, b) => b.statSync().changed.compareTo(a.statSync().changed));
 
     setState(() {

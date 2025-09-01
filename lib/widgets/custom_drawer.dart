@@ -34,11 +34,29 @@ class _CustomDrawerState extends State<CustomDrawer> {
   bool _autoUploadEnabled = false;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
+  String? _companyLogo;
+
   @override
   void initState() {
     super.initState();
     // restore saved toggle state
     _loadSettings();
+    _loadCompanyLogo();
+  }
+
+  Future<void> _loadCompanyLogo() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      final logo = prefs.getString('company_logo');
+      if (logo != null && logo.isNotEmpty) {
+        // ✅ Fix: Ensure full URL
+        if (logo.startsWith("http")) {
+          _companyLogo = logo;
+        } else {
+          _companyLogo = "http://192.168.1.4:8000/storage/$logo";
+        }
+      }
+    });
   }
 
   Future<void> _loadSettings() async {
@@ -225,6 +243,18 @@ class _CustomDrawerState extends State<CustomDrawer> {
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (_companyLogo != null)
+                      Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(
+                            _companyLogo!,
+                            height: 80,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
                     ListTile(
                       leading: CircleAvatar(
                         radius: 24,
