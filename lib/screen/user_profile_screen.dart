@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:photomanager_practice/widgets/diceBearAvatar.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({Key? key}) : super(key: key);
@@ -12,6 +13,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   String userName = '';
   String? email;
   String? companyLogo;
+  String? avatarSeed;
 
   @override
   void initState() {
@@ -25,6 +27,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       userName = prefs.getString('user_name') ?? 'Guest';
       email = prefs.getString('email');
       companyLogo = prefs.getString('company_logo');
+      avatarSeed = prefs.getString('user_avatar_seed') ?? 'defaultSeed';
     });
   }
 
@@ -34,69 +37,76 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('User Profile'),
-        backgroundColor: theme.appBarTheme.backgroundColor,
-        foregroundColor: theme.appBarTheme.foregroundColor,
-        elevation: theme.appBarTheme.elevation,
-      ),
+      appBar: AppBar(title: const Text('User Profile')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // 🖼️ Big company logo with border
+            // 🖼️ Company Logo
             if (companyLogo != null && companyLogo!.isNotEmpty)
               Container(
                 height: 100,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Colors.deepPurple, // border color
-                    width: 3, // border thickness
-                  ),
+                  border: Border.all(color: Colors.deepPurple, width: 3),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: Image.network(
-                    companyLogo!,
-                    fit: BoxFit.contain, // or BoxFit.cover if you prefer
-                  ),
+                  child: Image.network(companyLogo!, fit: BoxFit.contain),
                 ),
               )
             else
               Container(
-                height: 180,
+                height: 100,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: theme.colorScheme.secondary.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.deepPurple, width: 3),
                 ),
-                child: Icon(
-                  Icons.business,
-                  size: 80,
-                  color: theme.iconTheme.color,
-                ),
+                child: const Icon(Icons.business, size: 60),
               ),
 
             const SizedBox(height: 20),
 
-            // 👤 User info card
+            // 👤 Avatar + User Info Card
             Card(
               color: theme.cardColor,
               elevation: 4,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: ListTile(
-                title: Text(
-                  userName,
-                  style: textTheme.headlineSmall?.copyWith(fontSize: 20),
-                ),
-                subtitle: Text(
-                  email ?? 'No email found',
-                  style: textTheme.bodyMedium?.copyWith(fontSize: 16),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // 👤 Avatar on left
+                    DiceBearAvatar(seed: avatarSeed ?? userName, size: 60),
+
+                    const SizedBox(width: 16),
+
+                    // 📛 Name + Email on right (full width)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            userName,
+                            style: textTheme.headlineSmall?.copyWith(
+                              fontSize: 20,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            email ?? 'No email found',
+                            style: textTheme.bodyMedium?.copyWith(fontSize: 16),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

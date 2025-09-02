@@ -50,6 +50,8 @@ dependencies:
   open_file: ^3.3.2
   connectivity_plus: ^6.1.5
   share_plus: ^11.1.0
+  dice_bear: ^0.1.7
+  flutter_svg: ^2.2.0
 
 flutter_icons:
   android: true

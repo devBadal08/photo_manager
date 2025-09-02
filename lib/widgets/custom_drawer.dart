@@ -4,6 +4,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:photomanager_practice/screen/shared_with_me_screen.dart';
 import 'package:photomanager_practice/services/auto_upload_service.dart';
+import 'package:photomanager_practice/widgets/diceBearAvatar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../screen/login_screen.dart';
 import '../screen/user_profile_screen.dart';
@@ -35,6 +36,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   String? _companyLogo;
+  String? _avatarSeed;
 
   @override
   void initState() {
@@ -42,6 +44,22 @@ class _CustomDrawerState extends State<CustomDrawer> {
     // restore saved toggle state
     _loadSettings();
     _loadCompanyLogo();
+    _loadAvatarSeed();
+  }
+
+  Future<void> _loadAvatarSeed() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _avatarSeed = prefs.getString("user_avatar_seed") ?? "defaultSeed";
+    });
+  }
+
+  Future<void> _saveAvatarSeed(String seed) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("user_avatar_seed", seed);
+    setState(() {
+      _avatarSeed = seed;
+    });
   }
 
   Future<void> _loadCompanyLogo() async {
@@ -57,6 +75,38 @@ class _CustomDrawerState extends State<CustomDrawer> {
         }
       }
     });
+  }
+
+  void _openAvatarPicker() async {
+    List<String> seeds = List.generate(40, (i) => "avatar_$i");
+
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Choose Your Avatar"),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 300,
+          child: GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: seeds.length,
+            itemBuilder: (context, index) {
+              return GestureDetector(
+                onTap: () async {
+                  await _saveAvatarSeed(seeds[index]);
+                  Navigator.pop(context);
+                },
+                child: DiceBearAvatar(seed: seeds[index], size: 60),
+              );
+            },
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadSettings() async {
@@ -256,15 +306,17 @@ class _CustomDrawerState extends State<CustomDrawer> {
                         ),
                       ),
                     ListTile(
-                      leading: CircleAvatar(
-                        radius: 24,
-                        backgroundColor: Colors.deepPurple,
-                        backgroundImage: widget.avatarImage != null
-                            ? FileImage(widget.avatarImage!)
-                            : null,
-                        child: widget.avatarImage == null
-                            ? const Icon(Icons.person, color: Colors.white)
-                            : null,
+                      leading: GestureDetector(
+                        onTap: _openAvatarPicker,
+                        child: widget.avatarImage != null
+                            ? CircleAvatar(
+                                radius: 24,
+                                backgroundImage: FileImage(widget.avatarImage!),
+                              )
+                            : DiceBearAvatar(
+                                seed: _avatarSeed ?? widget.userName,
+                                size: 48,
+                              ),
                       ),
                       title: Text(
                         widget.userName,
@@ -274,6 +326,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
                             ),
                       ),
                     ),
+
                     const Divider(),
                     ListTile(
                       leading: const Icon(Icons.person),
