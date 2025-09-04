@@ -7,11 +7,22 @@ import 'package:photomanager_practice/screen/gallery_screen.dart';
 import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
+import 'package:photomanager_practice/services/folder_share_service.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
 
 class PhotoListScreen extends StatefulWidget {
-  final Directory folder;
-  const PhotoListScreen({super.key, required this.folder});
+  final Directory? folder;
+  final int? sharedFolderId; // backend folder
+  final String? sharedFolderName;
+  final bool isShared;
+
+  const PhotoListScreen({
+    super.key,
+    this.folder,
+    this.sharedFolderId,
+    this.sharedFolderName,
+    this.isShared = false,
+  });
 
   @override
   State<PhotoListScreen> createState() => _PhotoListScreenState();
@@ -28,25 +39,83 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   String selectedSegment = 'Folders';
   List<Directory> folderItems = [];
   List<File> imageItems = [];
+  List<Map<String, dynamic>> apiPhotos = [];
   bool isSearching = false;
   String searchQuery = '';
   List<Directory> filteredFolders = [];
   //List<File> filteredImages = [];
 
-  String get _mainFolderName => widget.folder.path.split('/').last;
+  String get _mainFolderName => widget.isShared
+      ? (widget.sharedFolderName ?? "Shared Folder")
+      : (widget.folder?.path.split('/').last ?? "Unnamed Folder");
 
   @override
   void initState() {
     super.initState();
-    //requestPermissions();
-    _pageController = PageController();
-    _loadItems();
-    countSubfoldersAndImages(widget.folder.path);
-    // ✅ Ensure uploaded files are loaded before scanning
-    BottomTabs.loadUploadedFiles().then((_) {
+    _pageController = PageController(initialPage: 0);
+
+    print(
+      "🔍 isShared=${widget.isShared}, sharedFolderId=${widget.sharedFolderId}",
+    );
+
+    if (widget.isShared && widget.sharedFolderId != null) {
+      _loadSharedPhotos(widget.sharedFolderId!);
+    } else if (widget.folder != null) {
       _loadItems();
-      countSubfoldersAndImages(widget.folder.path);
-    });
+      countSubfoldersAndImages(widget.folder!.path);
+    }
+  }
+
+  List<dynamic> images = [];
+
+  Future<void> _loadSharedPhotos(int folderId) async {
+    final dir = Directory(
+      '/storage/emulated/0/Pictures/MyApp/Shared/$folderId',
+    );
+
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+
+    // 📂 Load local images from disk
+    final localFiles = dir
+        .listSync()
+        .whereType<File>()
+        .where(
+          (f) =>
+              f.path.toLowerCase().endsWith('.jpg') ||
+              f.path.toLowerCase().endsWith('.jpeg') ||
+              f.path.toLowerCase().endsWith('.png'),
+        )
+        .toList();
+
+    final localPhotos = localFiles
+        .map((f) => {"path": f.path, "local": true})
+        .toList();
+
+    // 🌐 Load server images
+    final service = FolderShareService();
+    final data = await service.getSharedFolderPhotos(folderId);
+
+    if (data != null && data['success'] == true) {
+      final serverPhotos = List<Map<String, dynamic>>.from(data['photos']).map((
+        p,
+      ) {
+        return {
+          "path": p['path'], // keep raw relative path from API
+          "local": false,
+        };
+      }).toList();
+
+      setState(() {
+        apiPhotos = [...localPhotos, ...serverPhotos];
+      });
+    } else {
+      // no server photos, but still show local
+      setState(() {
+        apiPhotos = localPhotos;
+      });
+    }
   }
 
   @override
@@ -110,28 +179,36 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   Future<void> _takePhoto() async {
     final List<CameraDescription> cameras = await availableCameras();
-    final capturedImagePath =
-        await Navigator.push<String>(
-          context,
-          MaterialPageRoute(
-            builder: (_) => CameraScreen(
-              saveFolder: widget.folder,
-              cameras: cameras,
-            ), // Pass params if needed
-          ),
-        ).then((_) {
-          _loadItems(); // Refresh after coming back
-        });
+
+    final capturedImagePath = await Navigator.push<List<String>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CameraScreen(
+          saveFolder: widget.isShared ? null : widget.folder,
+          sharedFolderId: widget.isShared ? widget.sharedFolderId : null,
+          cameras: cameras,
+        ),
+      ),
+    );
 
     if (capturedImagePath != null && capturedImagePath.isNotEmpty) {
-      final File capturedImage = File(capturedImagePath);
-      final String newPath =
-          '${widget.folder.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      await capturedImage.copy(newPath); // Save into current folder
-      _loadItems(); // Refresh the list
+      if (widget.isShared) {
+        // ✅ Add photo to shared folder list (local preview only)
+        for (var path in capturedImagePath) {
+          apiPhotos.add({"path": path, "local": true});
+        }
+      } else {
+        _loadItems();
+      }
     }
 
-    //final autoUpload = AutoUploadService.instance;
+    // 🔄 Refresh after photo
+    if (widget.isShared) {
+      _loadSharedPhotos(widget.sharedFolderId!);
+    } else {
+      _loadItems();
+    }
+
     if (AutoUploadService.instance.isEnabled) {
       await AutoUploadService.instance.uploadNow();
     }
@@ -139,12 +216,15 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   Future<void> _loadItems() async {
     final folder = widget.folder;
+    if (folder == null) {
+      return; // Nothing to load in shared mode
+    }
+
     if (!await folder.exists()) return;
 
     final dirs = <Directory>[];
     final files = <File>[];
 
-    // ✅ remove subfolders that match parent folder name (case-insensitive)
     await for (final entity in folder.list()) {
       if (entity is Directory) {
         final sub = entity.path.split('/').last;
@@ -161,7 +241,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       }
     }
 
-    // Sort folders by last modified date (newest first)
     dirs.sort((a, b) => b.statSync().changed.compareTo(a.statSync().changed));
 
     setState(() {
@@ -315,18 +394,16 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   }
 
   Future<void> _createSubFolder(String name) async {
-    if (name.isEmpty) return;
-    final newFolder = Directory('${widget.folder.path}/$name');
+    if (name.isEmpty || widget.folder == null) return;
+
+    final newFolder = Directory('${widget.folder!.path}/$name');
     final candidate = name.trim();
     if (candidate.isEmpty) return;
 
-    // ❌ prevent subfolder name equal to main folder name (case-insensitive)
     if (candidate.toLowerCase() == _mainFolderName.toLowerCase()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            "Subfolder name cannot be the same as the parent folder.",
-          ),
+          content: Text("Subfolder name cannot be same as parent"),
         ),
       );
       return;
@@ -434,7 +511,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   onChanged: _filterItems,
                 )
               : Text(
-                  widget.folder.path.split('/').last,
+                  _mainFolderName,
                   style: textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -532,24 +609,40 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 },
                 children: [
                   // --- Folders Page ---
-                  folderItems.isEmpty
+                  widget.isShared
                       ? Center(
                           child: Text(
-                            "No folders yet",
+                            "No folders in shared view",
                             style: textTheme.bodyMedium,
                           ),
                         )
-                      : _buildFolderListCards(filteredFolders),
+                      : (folderItems.isEmpty
+                            ? Center(
+                                child: Text(
+                                  "No folders yet",
+                                  style: textTheme.bodyMedium,
+                                ),
+                              )
+                            : _buildFolderListCards(filteredFolders)),
 
                   // --- Images Page ---
-                  imageItems.isEmpty
-                      ? Center(
-                          child: Text(
-                            "No images yet",
-                            style: textTheme.bodyMedium,
-                          ),
-                        )
-                      : _buildImageGrid(imageItems),
+                  widget.isShared
+                      ? (apiPhotos.isEmpty
+                            ? Center(
+                                child: Text(
+                                  "No images yet in shared folder",
+                                  style: textTheme.bodyMedium,
+                                ),
+                              )
+                            : _buildApiImageGrid(apiPhotos))
+                      : (imageItems.isEmpty
+                            ? Center(
+                                child: Text(
+                                  "No images yet",
+                                  style: textTheme.bodyMedium,
+                                ),
+                              )
+                            : _buildImageGrid(imageItems)),
                 ],
               ),
             ),
@@ -567,7 +660,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               onCameraTap: _takePhoto,
               onUploadTap: () async {
                 final photoService = PhotoService();
-                await photoService.uploadAllImagesForUser();
+                await photoService.uploadImagesToServer();
               },
               onUploadComplete: () {
                 setState(() {
@@ -754,6 +847,37 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _buildApiImageGrid(List<Map<String, dynamic>> photos) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(8),
+      itemCount: photos.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 4,
+        mainAxisSpacing: 4,
+      ),
+      itemBuilder: (context, index) {
+        final photo = photos[index];
+        final isLocal = photo['local'] == true;
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: isLocal
+              ? Image.file(
+                  File(photo['path']),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+                )
+              : Image.network(
+                  "http://192.168.1.4:8000/storage/${photo['path']}",
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+                ),
         );
       },
     );

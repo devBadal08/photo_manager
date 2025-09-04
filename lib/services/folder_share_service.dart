@@ -9,7 +9,7 @@ class FolderShareService {
   static const String baseUrl =
       "http://192.168.1.4:8000/api"; // change if needed
 
-  /// 🔑 Helper: get token
+  // Helper: get token
   Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString("auth_token");
@@ -74,7 +74,7 @@ class FolderShareService {
     return [];
   }
 
-  /// 📥 Get folders I have shared with others
+  // Get folders I have shared with others
   Future<List<dynamic>> getMySharedFolders() async {
     final token = await _getToken();
     if (token == null) return [];
@@ -90,7 +90,7 @@ class FolderShareService {
     return [];
   }
 
-  /// 🗑️ Remove a shared folder (unshare)
+  // Remove a shared folder (unshare)
   Future<bool> unshareFolder(int folderShareId) async {
     final token = await _getToken();
     if (token == null) return false;
@@ -103,23 +103,26 @@ class FolderShareService {
     return response.statusCode == 200;
   }
 
-  /// 🖼️ Get photos inside a shared folder
-  Future<List<dynamic>> getPhotosByFolder(int folderId) async {
+  // Get photos of a folder that was shared with me
+  Future<Map<String, dynamic>?> getSharedFolderPhotos(int folderId) async {
     final token = await _getToken();
-    if (token == null) return [];
+    if (token == null) return null;
 
     final response = await http.get(
-      Uri.parse("$baseUrl/folders/$folderId/photos"),
+      Uri.parse("$baseUrl/shared-folder/$folderId/photos"),
       headers: {"Authorization": "Bearer $token", "Accept": "application/json"},
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      final data = jsonDecode(response.body);
+      return data; // contains { success: true, photos: [...] }
+    } else {
+      print("❌ Failed to load shared photos: ${response.body}");
+      return null;
     }
-    return [];
   }
 
-  // 🚀 Upload photo from gallery to shared folder
+  // Upload photo from gallery to shared folder
   Future<bool> uploadPhoto(int folderId) async {
     final token = await _getToken();
     if (token == null) return false;
@@ -142,7 +145,7 @@ class FolderShareService {
     return response.statusCode == 200;
   }
 
-  // 📸 Capture photo with camera & upload
+  // Capture photo with camera & upload
   Future<bool> captureAndUpload(int folderId) async {
     final token = await _getToken();
     if (token == null) return false;

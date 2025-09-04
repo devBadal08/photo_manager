@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:photomanager_practice/screen/photo_list_screen.dart';
 import 'package:photomanager_practice/screen/shared_folder_photos_screen.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
 
@@ -47,9 +48,10 @@ class SharedWithMeScreen extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => SharedFolderPhotosScreen(
-                          folderName: folder['name'] ?? "Unnamed Folder",
-                          photos: photos,
+                        builder: (context) => PhotoListScreen(
+                          isShared: true,
+                          sharedFolderId: folder['id'],
+                          sharedFolderName: folder['name'],
                         ),
                       ),
                     );

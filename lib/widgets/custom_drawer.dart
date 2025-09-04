@@ -49,17 +49,26 @@ class _CustomDrawerState extends State<CustomDrawer> {
 
   Future<void> _loadAvatarSeed() async {
     final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt("user_id");
     setState(() {
-      _avatarSeed = prefs.getString("user_avatar_seed") ?? "defaultSeed";
+      if (userId != null) {
+        _avatarSeed =
+            prefs.getString("user_avatar_seed_$userId") ?? "defaultSeed";
+      } else {
+        _avatarSeed = "defaultSeed"; // fallback
+      }
     });
   }
 
   Future<void> _saveAvatarSeed(String seed) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString("user_avatar_seed", seed);
-    setState(() {
-      _avatarSeed = seed;
-    });
+    final userId = prefs.getInt("user_id");
+    if (userId != null) {
+      await prefs.setString("user_avatar_seed_$userId", seed);
+      setState(() {
+        _avatarSeed = seed;
+      });
+    }
   }
 
   Future<void> _loadCompanyLogo() async {

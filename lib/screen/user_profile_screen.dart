@@ -23,11 +23,18 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('user_id');
     setState(() {
       userName = prefs.getString('user_name') ?? 'Guest';
       email = prefs.getString('email');
       companyLogo = prefs.getString('company_logo');
-      avatarSeed = prefs.getString('user_avatar_seed') ?? 'defaultSeed';
+      // ✅ Load avatar based on user id
+      if (userId != null) {
+        avatarSeed =
+            prefs.getString('user_avatar_seed_$userId') ?? 'defaultSeed';
+      } else {
+        avatarSeed = 'defaultSeed';
+      }
     });
   }
 
@@ -42,7 +49,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // 🖼️ Company Logo
+            // Company Logo
             if (companyLogo != null && companyLogo!.isNotEmpty)
               Container(
                 height: 100,
@@ -70,7 +77,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
             const SizedBox(height: 20),
 
-            // 👤 Avatar + User Info Card
+            // Avatar + User Info Card
             Card(
               color: theme.cardColor,
               elevation: 4,
@@ -82,12 +89,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // 👤 Avatar on left
+                    // Avatar on left
                     DiceBearAvatar(seed: avatarSeed ?? userName, size: 60),
 
                     const SizedBox(width: 16),
 
-                    // 📛 Name + Email on right (full width)
+                    // Name + Email on right (full width)
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
