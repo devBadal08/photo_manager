@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,16 +24,47 @@ class PhotoService {
     await prefs.setStringList('uploaded_files', uploadedFiles.value.toList());
   }
 
-  bool isImage(String filePath) {
+  bool isImageExtension(String filePath) {
     final imageExtensions = ['jpg', 'jpeg', 'png', 'pdf', 'docx'];
     final extension = filePath.split('.').last.toLowerCase();
     return imageExtensions.contains(extension);
   }
 
-  bool isImageFileType(String path) {
+  static bool isImageFileType(String path) {
     return path.endsWith('.jpg') ||
         path.endsWith('.jpeg') ||
         path.endsWith('.png');
+  }
+
+  static Future<bool> uploadImage({
+    required File imageFile,
+    required String folderName,
+    required String token,
+  }) async {
+    final url = Uri.parse('https://test.techstrota.com/api/photos/uploadAll');
+
+    try {
+      final request = http.MultipartRequest('POST', url)
+        ..headers['Authorization'] = 'Bearer $token'
+        ..fields['folders[]'] = folderName
+        ..files.add(
+          await http.MultipartFile.fromPath('images[]', imageFile.path),
+        );
+
+      final response = await request.send();
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        final errorBody = await response.stream.bytesToString();
+        print('❌ Server responded with ${response.statusCode}');
+        print('❌ Error Body: $errorBody');
+        return false;
+      }
+    } catch (e) {
+      print('❌ Error uploading image: $e');
+      return false;
+    }
   }
 
   Future<Directory> getBaseDir() async {
@@ -73,35 +106,145 @@ class PhotoService {
         .toList();
   }
 
-  bool isImageFile(String path) {
-    return path.endsWith('.jpg') ||
-        path.endsWith('.jpeg') ||
-        path.endsWith('.png') ||
-        path.endsWith('.gif');
+  bool isImage(String filePath) {
+    final imageExtensions = ['jpg', 'jpeg', 'png', 'pdf', 'docx'];
+    final extension = filePath.split('.').last.toLowerCase();
+    return imageExtensions.contains(extension);
   }
 
-  Future<bool> uploadImagesToServer() async {
+  static Future<File> compressImage(File file) async {
+    final dir = await getTemporaryDirectory();
+    final targetPath = path.join(
+      dir.path,
+      "${DateTime.now().millisecondsSinceEpoch}_${path.basename(file.path)}",
+    );
+
+    final XFile? compressedXFile =
+        await FlutterImageCompress.compressAndGetFile(
+          file.absolute.path,
+          targetPath,
+          quality: 60,
+        );
+
+    if (compressedXFile == null) {
+      throw Exception("Image compression failed");
+    }
+
+    return File(compressedXFile.path);
+  }
+
+  Future<void> uploadAllImagesForUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    //final userId = prefs.getString('user_id');
+
+    if (token == null) {
+      print('No token found.');
+      return;
+    }
+
+    final folders = await listFolders();
+
+    for (final folder in folders) {
+      final photos = await loadPhotosInFolder(folder);
+
+      for (final photo in photos) {
+        final success = await uploadImage(
+          imageFile: photo,
+          folderName: folder,
+          token: token,
+        );
+
+        if (success) {
+          try {
+            await photo.delete();
+            print('Deleted after upload: ${photo.path}');
+          } catch (e) {
+            print('Failed to delete ${photo.path}: $e');
+          }
+        } else {
+          print('Failed to upload ${photo.path}');
+        }
+      }
+    }
+
+    Future<void> createFolder(String name) async {
+      if (name.trim().isEmpty) return;
+      final baseDir = await getBaseDir();
+      final folder = Directory('${baseDir.path}/$name');
+
+      if (!await folder.exists()) {
+        await folder.create(recursive: true);
+        print("Folder created at: ${folder.path}");
+      } else {
+        print("Folder already exists: ${folder.path}");
+      }
+    }
+
+    Future<void> savePhotoInFolder(String folderName) async {
+      if (Platform.isAndroid) {
+        final status = await Permission.storage.request();
+        if (!status.isGranted) {
+          print("Storage permission denied");
+          return;
+        }
+      }
+
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(source: ImageSource.camera);
+
+      if (pickedFile != null) {
+        final baseDir = await getBaseDir();
+        final folder = Directory('${baseDir.path}/$folderName');
+
+        if (!await folder.exists()) {
+          await folder.create(recursive: true);
+        }
+
+        final fileName =
+            '${DateTime.now().millisecondsSinceEpoch}${path.extension(pickedFile.path)}';
+        final savedFile = await File(
+          pickedFile.path,
+        ).copy('${folder.path}/$fileName');
+
+        print("Photo saved at: ${savedFile.path}");
+      }
+    }
+  }
+
+  static Future<void> uploadImagesToServer(
+    BuildContext? context, {
+    bool silent = false,
+  }) async {
     await PhotoService.loadUploadedFiles();
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getInt('user_id')?.toString();
     final token = prefs.getString('auth_token');
 
     if (userId == null || token == null) {
-      print("❌ User not logged in");
-      return false;
+      if (!silent && context != null && context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("User not logged in")));
+      }
+      return;
     }
 
     final baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
     if (!await baseDir.exists()) {
-      print("❌ No folders found to upload");
-      return false;
+      if (!silent && context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("No folders found to upload")),
+        );
+      }
+      return;
     }
 
-    final imageFiles = <File>[];
-    final folderNames = <String>[];
+    List<File> imageFiles = [];
+    List<String> folderNames = [];
 
     for (var entity in baseDir.listSync(recursive: true)) {
-      if (entity is File && isImage(entity.path)) {
+      if (entity is File && isImageFileType(entity.path)) {
         imageFiles.add(entity);
         final relativePath = entity.parent.path.replaceFirst(
           baseDir.path + '/',
@@ -112,72 +255,168 @@ class PhotoService {
     }
 
     if (imageFiles.isEmpty) {
-      print("⚠️ No images found");
-      return false;
+      if (!silent && context != null && context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("No images found")));
+      }
+      return;
     }
 
-    // Pair files with folders
-    final fileFolderPairs = <MapEntry<File, String>>[];
-    for (int i = 0; i < imageFiles.length; i++) {
-      fileFolderPairs.add(MapEntry(imageFiles[i], folderNames[i]));
-    }
+    // Pair files with their folders
+    final fileFolderPairs = List.generate(
+      imageFiles.length,
+      (i) => MapEntry(imageFiles[i], folderNames[i]),
+    );
 
-    // Filter not uploaded
+    // Filter only not uploaded
     final notUploadedPairs = fileFolderPairs
         .where(
           (entry) => !PhotoService.uploadedFiles.value.contains(
-            entry.key.absolute.path,
+            File(entry.key.path).absolute.path,
           ),
         )
         .toList();
 
     if (notUploadedPairs.isEmpty) {
-      print("⚠️ No new images to upload");
-      return false;
-    }
-
-    // Upload in batches
-    const batchSize = 10;
-    bool allSuccess = true;
-
-    for (int start = 0; start < notUploadedPairs.length; start += batchSize) {
-      final end = (start + batchSize < notUploadedPairs.length)
-          ? start + batchSize
-          : notUploadedPairs.length;
-
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('http://192.168.1.4:8000/api/photos/uploadAll'),
-      )..headers['Authorization'] = 'Bearer $token';
-
-      for (int i = start; i < end; i++) {
-        final file = notUploadedPairs[i].key;
-        final folder = notUploadedPairs[i].value;
-
-        request.fields['folders[${i - start}]'] = folder;
-        request.files.add(
-          await http.MultipartFile.fromPath('images[${i - start}]', file.path),
+      if (!silent && context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("No new images to upload")),
         );
       }
-
-      final response = await request.send();
-
-      if (response.statusCode == 200) {
-        for (int i = start; i < end; i++) {
-          PhotoService.uploadedFiles.value.add(
-            notUploadedPairs[i].key.absolute.path,
-          );
-        }
-        await PhotoService.saveUploadedFiles();
-        print("✅ Uploaded batch ${start ~/ batchSize + 1}");
-      } else {
-        allSuccess = false;
-        final err = await response.stream.bytesToString();
-        print("❌ Batch upload failed: $err");
-        break;
-      }
+      return;
     }
 
-    return allSuccess;
+    final notUploadedFiles = notUploadedPairs.map((e) => e.key).toList();
+    final notUploadedFolders = notUploadedPairs.map((e) => e.value).toList();
+
+    // ✅ Ask confirmation only if not silent
+    if (!silent && context != null && context.mounted) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("Upload Confirmation"),
+          content: Text(
+            "Do you want to upload ${notUploadedFiles.length} images to the server?",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("No"),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("Yes"),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
+
+    // ✅ Show progress dialog only if not silent
+    final uploadedCount = ValueNotifier<int>(0);
+    final totalImages = notUploadedFiles.length;
+
+    if (!silent && context != null && context.mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          content: ValueListenableBuilder<int>(
+            valueListenable: uploadedCount,
+            builder: (_, count, __) {
+              return Row(
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Text(
+                      "${((count / totalImages) * 100).toStringAsFixed(0)}% uploading images",
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    // ✅ Start uploading
+    try {
+      const batchSize = 10;
+      bool allSuccess = true;
+
+      for (int start = 0; start < notUploadedFiles.length; start += batchSize) {
+        final end = (start + batchSize < notUploadedFiles.length)
+            ? start + batchSize
+            : notUploadedFiles.length;
+
+        final request = http.MultipartRequest(
+          'POST',
+          Uri.parse('https://test.techstrota.com/api/photos/uploadAll'),
+        );
+        request.headers['Authorization'] = 'Bearer $token';
+
+        for (int i = start; i < end; i++) {
+          request.fields['folders[${i - start}]'] = notUploadedFolders[i];
+          final compressed = await compressImage(notUploadedFiles[i]);
+          final length = await compressed.length();
+          final stream = http.ByteStream(compressed.openRead());
+
+          request.files.add(
+            http.MultipartFile(
+              'images[${i - start}]',
+              stream,
+              length,
+              filename: compressed.path.split('/').last,
+            ),
+          );
+        }
+
+        final response = await request.send();
+
+        if (response.statusCode == 200) {
+          for (int i = start; i < end; i++) {
+            PhotoService.uploadedFiles.value.add(
+              File(notUploadedFiles[i].path).absolute.path,
+            );
+          }
+          PhotoService.uploadedFiles.notifyListeners();
+          await PhotoService.saveUploadedFiles();
+          uploadedCount.value += (end - start);
+        } else {
+          allSuccess = false;
+          final err = await response.stream.bytesToString();
+          debugPrint("Batch upload failed: $err");
+          break;
+        }
+      }
+
+      // ✅ Close progress dialog only if not silent
+      if (!silent && context != null && context.mounted) {
+        Navigator.pop(context);
+      }
+
+      if (!silent && context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              allSuccess ? "Uploaded successfully" : "Some uploads failed",
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!silent && context != null && context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Upload failed")));
+      }
+      debugPrint("❌ Upload error: $e");
+    }
   }
 }

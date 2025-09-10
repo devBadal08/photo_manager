@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:photomanager_practice/screen/photo_list_screen.dart';
-import 'package:photomanager_practice/screen/shared_folder_photos_screen.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
 
 class SharedWithMeScreen extends StatelessWidget {
@@ -28,7 +27,6 @@ class SharedWithMeScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               final share = sharedFolders[index];
               final folder = share['folder'];
-              final photos = folder['photos'] ?? []; // 👈 get photos list
 
               return Card(
                 margin: const EdgeInsets.symmetric(vertical: 8),

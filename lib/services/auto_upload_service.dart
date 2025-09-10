@@ -3,6 +3,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/src/widgets/framework.dart';
+import 'package:path/path.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'photo_service.dart';
 import 'bottom_tabs.dart';
@@ -85,16 +87,15 @@ class AutoUploadService {
           .toList();
 
       for (final file in files) {
-        if (!BottomTabs.uploadedFiles.value.contains(file.path)) {
-          final ok = await PhotoService().uploadImagesToServer();
-          if (ok) {
-            BottomTabs.uploadedFiles.value = {
-              ...BottomTabs.uploadedFiles.value,
-              file.path,
-            };
-          }
+        if (!PhotoService.uploadedFiles.value.contains(file.path)) {
+          await PhotoService.uploadImagesToServer(null, silent: true);
+          PhotoService.uploadedFiles.value = {
+            ...PhotoService.uploadedFiles.value,
+            file.path,
+          };
         }
       }
+
       debugPrint("✅ Auto-upload completed");
     } catch (e) {
       debugPrint("❌ Auto-upload failed: $e");

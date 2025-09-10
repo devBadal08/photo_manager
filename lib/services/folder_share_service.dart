@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
@@ -7,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class FolderShareService {
   static const String baseUrl =
-      "http://192.168.1.4:8000/api"; // change if needed
+      "https://test.techstrota.com/api"; // change if needed
 
   // Helper: get token
   Future<String?> _getToken() async {
@@ -69,38 +70,9 @@ class FolderShareService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(response.body); // has "owned" and "shared_with_me"
     }
     return [];
-  }
-
-  // Get folders I have shared with others
-  Future<List<dynamic>> getMySharedFolders() async {
-    final token = await _getToken();
-    if (token == null) return [];
-
-    final response = await http.get(
-      Uri.parse("$baseUrl/folder/my-shared"),
-      headers: {"Authorization": "Bearer $token", "Accept": "application/json"},
-    );
-
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    }
-    return [];
-  }
-
-  // Remove a shared folder (unshare)
-  Future<bool> unshareFolder(int folderShareId) async {
-    final token = await _getToken();
-    if (token == null) return false;
-
-    final response = await http.delete(
-      Uri.parse("$baseUrl/folder/unshare/$folderShareId"),
-      headers: {"Authorization": "Bearer $token", "Accept": "application/json"},
-    );
-
-    return response.statusCode == 200;
   }
 
   // Get photos of a folder that was shared with me
@@ -122,57 +94,107 @@ class FolderShareService {
     }
   }
 
-  // Upload photo from gallery to shared folder
-  Future<bool> uploadPhoto(int folderId) async {
+  // Upload multiple images to a shared folder
+  Future<bool> uploadToSharedFolder(
+    BuildContext context,
+    int folderId,
+    List<File> images,
+  ) async {
     final token = await _getToken();
     if (token == null) return false;
 
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    // Helper to normalize filenames (lowercase, basename only)
+    String normalizeFileName(String path) {
+      return path.split('/').last.toLowerCase();
+    }
 
-    if (pickedFile == null) return false;
+    // Step 1: Get already uploaded photos
+    final sharedData = await getSharedFolderPhotos(folderId);
+    final Set<String> uploadedBasenames = {};
 
+    if (sharedData != null && sharedData['photos'] != null) {
+      for (var p in sharedData['photos']) {
+        if (sharedData != null && sharedData['photos'] != null) {
+          for (var p in sharedData['photos']) {
+            final path = p['path']?.toString(); // use "path", not "filename"
+            if (path != null) {
+              uploadedBasenames.add(normalizeFileName(path));
+            }
+          }
+        }
+      }
+    }
+
+    // Step 2: Filter out already uploaded files
+    final List<File> newImages = images.where((file) {
+      final name = normalizeFileName(file.path);
+      return !uploadedBasenames.contains(name);
+    }).toList();
+
+    if (newImages.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("No new images to upload.")));
+      return true;
+    }
+
+    // Step 3: Ask user for confirmation
+    final bool confirm = await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Confirm Upload"),
+        content: Text(
+          "${newImages.length} new image${newImages.length > 1 ? 's' : ''} are ready to upload. Do you want to continue?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text("Upload"),
+          ),
+        ],
+      ),
+    );
+
+    if (!confirm) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Upload cancelled.")));
+      return false;
+    }
+
+    // Step 4: Upload new images
     var request = http.MultipartRequest(
       "POST",
-      Uri.parse("$baseUrl/folders/$folderId/upload"),
+      Uri.parse("$baseUrl/shared-folders/$folderId/upload"),
     );
     request.headers["Authorization"] = "Bearer $token";
-    request.files.add(
-      await http.MultipartFile.fromPath("photo", pickedFile.path),
-    );
+
+    for (var file in newImages) {
+      request.files.add(
+        await http.MultipartFile.fromPath("photos[]", file.path),
+      );
+    }
 
     final response = await request.send();
-    return response.statusCode == 200;
-  }
 
-  // Capture photo with camera & upload
-  Future<bool> captureAndUpload(int folderId) async {
-    final token = await _getToken();
-    if (token == null) return false;
-
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.camera);
-
-    if (pickedFile == null) return false;
-
-    var request = http.MultipartRequest(
-      "POST",
-      Uri.parse("$baseUrl/folders/$folderId/upload"),
-    );
-    request.headers["Authorization"] = "Bearer $token";
-    request.files.add(
-      await http.MultipartFile.fromPath("photo", pickedFile.path),
-    );
-
-    final response = await request.send();
-    return response.statusCode == 200;
-  }
-
-  Future<bool> uploadSharedFolderImages() async {
-    try {
-      return await PhotoService().uploadImagesToServer();
-    } catch (e) {
-      print("❌ Error uploading shared folder images: $e");
+    if (response.statusCode == 200) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Uploaded ${newImages.length} image${newImages.length > 1 ? 's' : ''}.",
+          ),
+        ),
+      );
+      return true;
+    } else {
+      final err = await response.stream.bytesToString();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Upload failed: $err")));
       return false;
     }
   }

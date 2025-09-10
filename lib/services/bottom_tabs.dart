@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' as path;
@@ -212,7 +211,7 @@ class BottomTabs extends StatelessWidget {
 
         var request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://192.168.1.4:8000/api/photos/uploadAll'),
+          Uri.parse('https://test.techstrota.com/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 
@@ -288,7 +287,11 @@ class BottomTabs extends StatelessWidget {
         onTap: (index) {
           if (index == 1) {
             _resetTab(tabController);
-            uploadImagesToServer(context);
+            if (onUploadTap != null) {
+              onUploadTap!(); // call parent callback (PhotoListScreen)
+            } else {
+              uploadImagesToServer(context); // fallback to default
+            }
             return;
           }
 

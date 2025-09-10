@@ -1,10 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:photomanager_practice/screen/camera_screen.dart';
 import 'package:photomanager_practice/screen/gallery_screen.dart';
-import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
@@ -33,7 +31,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   late PageController _pageController;
   bool uploadEnabled = false;
   bool selectionMode = false;
-  List<File> selectedImages = [];
+  List<String> selectedImages = [];
   int totalSubfolders = 0;
   int totalImages = 0;
   String selectedSegment = 'Folders';
@@ -68,54 +66,55 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   List<dynamic> images = [];
 
+  bool isImage(String filePath) {
+    final imageExtensions = ['jpg', 'jpeg', 'png', 'pdf', 'docx'];
+    final extension = filePath.split('.').last.toLowerCase();
+    return imageExtensions.contains(extension);
+  }
+
   Future<void> _loadSharedPhotos(int folderId) async {
     final dir = Directory(
       '/storage/emulated/0/Pictures/MyApp/Shared/$folderId',
     );
+    if (!await dir.exists()) await dir.create(recursive: true);
 
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-
-    // 📂 Load local images from disk
+    // 📂 Local images
     final localFiles = dir
         .listSync()
         .whereType<File>()
-        .where(
-          (f) =>
-              f.path.toLowerCase().endsWith('.jpg') ||
-              f.path.toLowerCase().endsWith('.jpeg') ||
-              f.path.toLowerCase().endsWith('.png'),
-        )
+        .where((f) => isImage(f.path))
         .toList();
 
+    // 🔄 Filter out already uploaded files
+    final uploadedSet = PhotoService.uploadedFiles.value;
     final localPhotos = localFiles
+        .where((f) => !uploadedSet.contains(f.path)) // ✅ only keep pending
         .map((f) => {"path": f.path, "local": true})
         .toList();
 
-    // 🌐 Load server images
+    // 🌐 Server images
     final service = FolderShareService();
     final data = await service.getSharedFolderPhotos(folderId);
 
+    List<Map<String, dynamic>> serverPhotos = [];
     if (data != null && data['success'] == true) {
-      final serverPhotos = List<Map<String, dynamic>>.from(data['photos']).map((
-        p,
-      ) {
-        return {
-          "path": p['path'], // keep raw relative path from API
-          "local": false,
-        };
+      serverPhotos = List<Map<String, dynamic>>.from(data['photos']).map((p) {
+        return {"path": p['path'], "local": false};
       }).toList();
-
-      setState(() {
-        apiPhotos = [...localPhotos, ...serverPhotos];
-      });
-    } else {
-      // no server photos, but still show local
-      setState(() {
-        apiPhotos = localPhotos;
-      });
     }
+
+    // ✅ Merge (no duplicates now)
+    final allPhotos = [...localPhotos, ...serverPhotos];
+    // ✅ Merge (dedupe by filename instead of full path)
+    final uniquePhotos = <String, Map<String, dynamic>>{};
+    for (var photo in allPhotos) {
+      final filename = photo['path'].split('/').last; // use only filename
+      uniquePhotos[filename] = photo;
+    }
+
+    setState(() {
+      apiPhotos = uniquePhotos.values.toList();
+    });
   }
 
   @override
@@ -194,9 +193,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     if (capturedImagePath != null && capturedImagePath.isNotEmpty) {
       if (widget.isShared) {
         // ✅ Add photo to shared folder list (local preview only)
-        for (var path in capturedImagePath) {
-          apiPhotos.add({"path": path, "local": true});
-        }
+        _loadSharedPhotos(widget.sharedFolderId!);
       } else {
         _loadItems();
       }
@@ -453,17 +450,17 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     );
 
     if (confirm == true) {
-      final uploadedSet = BottomTabs.uploadedFiles.value;
+      final uploadedSet = PhotoService.uploadedFiles.value;
       int deletedCount = 0;
 
       for (final file in selectedImages) {
-        if (uploadedSet.contains(file.path)) {
+        if (uploadedSet.contains(file)) {
           // ✅ only delete uploaded ones
           try {
-            await file.delete();
+            await File(file).delete();
             deletedCount++;
           } catch (e) {
-            debugPrint("Error deleting ${file.path}: $e");
+            debugPrint("Error deleting ${file}: $e");
           }
         }
       }
@@ -543,27 +540,27 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               ),
             // ✅ New Delete button in selection mode
             if (selectionMode)
-              IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
-                onPressed: _deleteSelectedImages,
+              // IconButton(
+              //   icon: const Icon(Icons.delete, color: Colors.red),
+              //   onPressed: _deleteSelectedImages,
+              // ),
+              PopupMenuButton<String>(
+                // onSelected: (value) {
+                //   if (value == 'select') {
+                //     setState(() {
+                //       selectionMode = true;
+                //       selectedImages.clear();
+                //     });
+                //   }
+                // },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'select',
+                    child: Text('Select Photos to Upload'),
+                  ),
+                ],
+                icon: const Icon(Icons.more_vert),
               ),
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'select') {
-                  setState(() {
-                    selectionMode = true;
-                    selectedImages.clear();
-                  });
-                }
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: 'select',
-                  child: Text('Select Photos to Upload'),
-                ),
-              ],
-              icon: const Icon(Icons.more_vert),
-            ),
           ],
           elevation: 4,
         ),
@@ -659,8 +656,58 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               },
               onCameraTap: _takePhoto,
               onUploadTap: () async {
-                final photoService = PhotoService();
-                await photoService.uploadImagesToServer();
+                if (widget.isShared && widget.sharedFolderId != null) {
+                  // 🔄 Upload shared folder photos
+                  final dir = Directory(
+                    '/storage/emulated/0/Pictures/MyApp/Shared/${widget.sharedFolderId}',
+                  );
+
+                  if (await dir.exists()) {
+                    final imageFiles = <File>[];
+
+                    for (var entity in dir.listSync(recursive: true)) {
+                      if (entity is File && isImage(entity.path)) {
+                        imageFiles.add(entity);
+                      }
+                    }
+
+                    print(
+                      "📸 Found ${imageFiles.length} images: ${imageFiles.map((f) => f.path).toList()}",
+                    );
+
+                    if (imageFiles.isNotEmpty) {
+                      final service = FolderShareService();
+                      final success = await service.uploadToSharedFolder(
+                        context,
+                        widget.sharedFolderId!,
+                        imageFiles,
+                      );
+
+                      if (success) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text("Shared folder uploaded"),
+                          ),
+                        );
+                        _loadSharedPhotos(widget.sharedFolderId!);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Upload failed")),
+                        );
+                      }
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text("No images found to upload"),
+                        ),
+                      );
+                    }
+                  }
+                } else {
+                  // 🔄 Upload personal photos
+                  await PhotoService.uploadImagesToServer(context);
+                  _loadItems();
+                }
               },
               onUploadComplete: () {
                 setState(() {
@@ -728,10 +775,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   icon: const Icon(Icons.edit, color: Colors.blueAccent),
                   onPressed: () => _renameFolder(folder),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.redAccent),
-                  onPressed: () => _deleteFolder(folder),
-                ),
+                // IconButton(
+                //   icon: const Icon(Icons.delete, color: Colors.redAccent),
+                //   onPressed: () => _deleteFolder(folder),
+                // ),
               ],
             ),
             onTap: () {
@@ -750,7 +797,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   Widget _buildImageGrid(List<File> images) {
     return ValueListenableBuilder<Set<String>>(
-      valueListenable: BottomTabs.uploadedFiles,
+      valueListenable: PhotoService.uploadedFiles,
       builder: (context, uploadedSet, _) {
         return GridView.builder(
           padding: const EdgeInsets.all(8),
@@ -762,14 +809,16 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           ),
           itemBuilder: (context, index) {
             final file = images[index];
-            final isUploaded = uploadedSet.contains(file.path);
-            final isSelected = selectedImages.contains(file);
+            final isUploaded = PhotoService.uploadedFiles.value.contains(
+              file.path,
+            );
+            final isSelected = selectedImages.contains(file.path);
 
             return GestureDetector(
               onLongPress: () {
                 setState(() {
                   selectionMode = true;
-                  selectedImages.add(file);
+                  selectedImages.add(file.path);
                 });
               },
               onTap: () {
@@ -778,14 +827,15 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     if (isSelected) {
                       selectedImages.remove(file);
                     } else {
-                      selectedImages.add(file);
+                      selectedImages.add(file.path);
                     }
                   });
                 } else {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => GalleryScreen(images: images),
+                      builder: (_) =>
+                          GalleryScreen(images: images, startIndex: index),
                     ),
                   );
                 }
@@ -814,7 +864,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                         onChanged: (checked) {
                           setState(() {
                             if (checked == true) {
-                              selectedImages.add(file);
+                              selectedImages.add(file.path);
                             } else {
                               selectedImages.remove(file);
                             }
@@ -853,31 +903,131 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   }
 
   Widget _buildApiImageGrid(List<Map<String, dynamic>> photos) {
-    return GridView.builder(
-      padding: const EdgeInsets.all(8),
-      itemCount: photos.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
-      ),
-      itemBuilder: (context, index) {
-        final photo = photos[index];
-        final isLocal = photo['local'] == true;
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: PhotoService.uploadedFiles,
+      builder: (context, uploadedSet, _) {
+        // 🔥 Filter by filename (avoid duplicates from server + local)
+        final filteredPhotos = photos.where((p) {
+          final filename = p['path'].split('/').last;
+          return !uploadedSet.any((uploaded) => uploaded.endsWith(filename));
+        }).toList();
 
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: isLocal
-              ? Image.file(
-                  File(photo['path']),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
-                )
-              : Image.network(
-                  "http://192.168.1.4:8000/storage/${photo['path']}",
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
-                ),
+        return GridView.builder(
+          padding: const EdgeInsets.all(8),
+          itemCount: filteredPhotos.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            crossAxisSpacing: 4,
+            mainAxisSpacing: 4,
+          ),
+          itemBuilder: (context, index) {
+            final photo = filteredPhotos[index];
+            final isLocal = photo['local'] == true;
+            final localPath = photo['path'];
+            final serverPath =
+                "https://test.techstrota.com/storage/${photo['path']}";
+            final filename = photo['path'].split('/').last;
+            final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
+            final isSelected = selectedImages.contains(localPath);
+
+            return GestureDetector(
+              onLongPress: () {
+                setState(() {
+                  selectionMode = true;
+                  if (!selectedImages.contains(localPath)) {
+                    selectedImages.add(localPath);
+                  }
+                });
+              },
+              onTap: () {
+                if (selectionMode) {
+                  setState(() {
+                    if (isSelected) {
+                      selectedImages.remove(localPath);
+                    } else {
+                      selectedImages.add(localPath);
+                    }
+                  });
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => GalleryScreen(
+                        images: photos.map((p) => File(p['path'])).toList(),
+                        startIndex: index,
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: isLocal
+                          ? Image.file(
+                              File(localPath),
+                              fit: BoxFit.cover,
+                              cacheWidth: 300,
+                              cacheHeight: 300,
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.broken_image),
+                            )
+                          : Image.network(
+                              serverPath,
+                              fit: BoxFit.cover,
+                              cacheWidth: 300,
+                              cacheHeight: 300,
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.broken_image),
+                            ),
+                    ),
+                  ),
+
+                  // ✅ Selection checkbox
+                  if (selectionMode)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Checkbox(
+                        value: isSelected,
+                        onChanged: (checked) {
+                          setState(() {
+                            if (checked == true) {
+                              selectedImages.add(localPath);
+                            } else {
+                              selectedImages.remove(localPath);
+                            }
+                          });
+                        },
+                        activeColor: Colors.blue,
+                        checkColor: Colors.white,
+                      ),
+                    ),
+
+                  // ✅ Uploaded green tick
+                  if (isUploaded)
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.green,
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(4),
+                        child: const Icon(
+                          Icons.check,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
         );
       },
     );

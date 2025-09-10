@@ -17,7 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> login(String email, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('http://192.168.1.4:8000/api/login'),
+        Uri.parse('https://test.techstrota.com/api/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );
@@ -31,9 +31,9 @@ class _LoginScreenState extends State<LoginScreen> {
         final userId = data['user']['id'];
         final userName = data['user']['name'];
         final userEmail = data['user']['email'];
-        final rawLogo = data['user']['company']['company_logo'];
-        final baseUrl =
-            "http://192.168.1.4:8000/storage/"; // 👈 use your machine/server IP
+        final company = data['user']['company'];
+        final rawLogo = company?['company_logo']; // <-- safe access
+        final baseUrl = "https://test.techstrota.com/storage/";
         final companyLogo = rawLogo != null ? "$baseUrl$rawLogo" : null;
 
         final prefs = await SharedPreferences.getInstance();
@@ -41,7 +41,12 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setInt('user_id', userId);
         await prefs.setString('user_name', userName ?? '');
         await prefs.setString('email', userEmail ?? '');
-        await prefs.setString('company_logo', companyLogo ?? '');
+        //await prefs.setString('company_logo', companyLogo ?? '');
+        if (companyLogo != null) {
+          prefs.setString('company_logo', companyLogo);
+        } else {
+          prefs.remove('company_logo');
+        }
 
         Navigator.push(
           context,

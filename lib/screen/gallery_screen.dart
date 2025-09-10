@@ -5,7 +5,11 @@ import 'package:photomanager_practice/screen/image_editor_screen.dart';
 class GalleryScreen extends StatefulWidget {
   final List<File> images;
 
-  const GalleryScreen({super.key, required this.images});
+  const GalleryScreen({
+    super.key,
+    required this.images,
+    required int startIndex,
+  });
 
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();

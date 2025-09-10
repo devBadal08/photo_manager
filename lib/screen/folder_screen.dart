@@ -521,12 +521,12 @@ class _FolderScreenState extends State<FolderScreen>
                     _shareFolder(folder);
                   },
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.redAccent),
-                  onPressed: () {
-                    _deleteFolder(folder);
-                  },
-                ),
+                // IconButton(
+                //   icon: const Icon(Icons.delete, color: Colors.redAccent),
+                //   onPressed: () {
+                //     _deleteFolder(folder);
+                //   },
+                // ),
               ],
             ),
             onTap: () {

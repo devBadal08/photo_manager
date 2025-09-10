@@ -80,7 +80,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
         if (logo.startsWith("http")) {
           _companyLogo = logo;
         } else {
-          _companyLogo = "http://192.168.1.4:8000/storage/$logo";
+          _companyLogo = "https://test.techstrota.com/storage/$logo";
         }
       }
     });
@@ -361,21 +361,21 @@ class _CustomDrawerState extends State<CustomDrawer> {
                         },
                       ),
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.delete_forever),
-                      title: const Text("Delete All Images"),
-                      trailing: Switch(
-                        value: _deleteEnabled,
-                        onChanged: (val) {
-                          setState(() {
-                            _deleteEnabled = val;
-                          });
-                          if (val) {
-                            _confirmDelete();
-                          }
-                        },
-                      ),
-                    ),
+                    // ListTile(
+                    //   leading: const Icon(Icons.delete_forever),
+                    //   title: const Text("Delete All Images"),
+                    //   trailing: Switch(
+                    //     value: _deleteEnabled,
+                    //     onChanged: (val) {
+                    //       setState(() {
+                    //         _deleteEnabled = val;
+                    //       });
+                    //       if (val) {
+                    //         _confirmDelete();
+                    //       }
+                    //     },
+                    //   ),
+                    // ),
                     ListTile(
                       leading: const Icon(Icons.folder_shared),
                       title: const Text("Shared With Me"),
