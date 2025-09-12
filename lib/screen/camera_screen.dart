@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
+import 'package:photomanager_practice/services/photo_service.dart';
 
 class CameraScreen extends StatefulWidget {
   final Directory? saveFolder; // where to save images
@@ -73,19 +74,23 @@ class _CameraScreenState extends State<CameraScreen> {
     setState(() => _isCapturing = true);
 
     try {
-      final image = await _controller.takePicture();
+      final XFile image = await _controller.takePicture();
+      File originalFile = File(image.path);
+
+      // ✅ Compress before saving
+      File compressedFile = await PhotoService.compressImage(originalFile);
 
       if (widget.saveFolder != null) {
         // 📂 Local folder mode
         final newPath =
             '${widget.saveFolder!.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-        await File(image.path).copy(newPath);
+        await compressedFile.copy(newPath);
 
         setState(() {
           capturedImages.add(File(newPath));
         });
       } else if (widget.sharedFolderId != null) {
-        // 📂 Shared folder mode (store locally just like normal folders)
+        // 📂 Shared folder mode
         final dir = Directory(
           '/storage/emulated/0/Pictures/MyApp/Shared/${widget.sharedFolderId}',
         );
@@ -95,12 +100,15 @@ class _CameraScreenState extends State<CameraScreen> {
 
         final newPath =
             '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-        await File(image.path).copy(newPath);
+        await compressedFile.copy(newPath);
 
         setState(() {
           capturedImages.add(File(newPath));
         });
       }
+
+      // (optional) cleanup: delete the original uncompressed file
+      //await originalFile.delete();
     } catch (e) {
       debugPrint("Error capturing photo: $e");
     } finally {

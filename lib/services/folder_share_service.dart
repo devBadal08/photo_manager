@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class FolderShareService {
   static const String baseUrl =
-      "https://badal.techstrota.com/api"; // change if needed
+      "https://test.techstrota.com/api"; // change if needed
 
   // Helper: get token
   Future<String?> _getToken() async {

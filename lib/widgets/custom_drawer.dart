@@ -76,11 +76,12 @@ class _CustomDrawerState extends State<CustomDrawer> {
     setState(() {
       final logo = prefs.getString('company_logo');
       if (logo != null && logo.isNotEmpty) {
-        // ✅ Fix: Ensure full URL
+        // Make sure the path is correct on server
         if (logo.startsWith("http")) {
-          _companyLogo = logo;
+          _companyLogo = logo; // full URL
         } else {
-          _companyLogo = "https://badal.techstrota.com/storage/$logo";
+          _companyLogo =
+              "https://test.techstrota.com/storage/company-logos/$logo";
         }
       }
     });
