@@ -14,10 +14,29 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedEmail = prefs.getString('email');
+    final savedPassword = prefs.getString('password');
+
+    if (savedEmail != null) {
+      _emailController.text = savedEmail;
+    }
+    if (savedPassword != null) {
+      _passwordController.text = savedPassword;
+    }
+  }
+
   Future<void> login(String email, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('https://test.techstrota.com/api/login'),
+        Uri.parse('http://192.168.1.4:8000/api/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );
@@ -25,15 +44,12 @@ class _LoginScreenState extends State<LoginScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final token = data['token'];
-        if (data['token'] == null) {
-          print("Token is null! Full response: $data");
-        }
         final userId = data['user']['id'];
         final userName = data['user']['name'];
         final userEmail = data['user']['email'];
         final company = data['user']['company'];
-        final rawLogo = company?['company_logo']; // <-- safe access
-        final baseUrl = "https://test.techstrota.com/storage/";
+        final rawLogo = company?['company_logo'];
+        final baseUrl = "http://192.168.1.4:8000/storage/";
         final companyLogo = rawLogo != null ? "$baseUrl$rawLogo" : null;
 
         final prefs = await SharedPreferences.getInstance();
@@ -41,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setInt('user_id', userId);
         await prefs.setString('user_name', userName ?? '');
         await prefs.setString('email', userEmail ?? '');
-        //await prefs.setString('company_logo', companyLogo ?? '');
+        await prefs.setString('password', password); // 👈 save password
         if (companyLogo != null) {
           prefs.setString('company_logo', companyLogo);
         } else {
@@ -53,7 +69,6 @@ class _LoginScreenState extends State<LoginScreen> {
           MaterialPageRoute(builder: (context) => FolderScreen()),
         );
       } else if (response.statusCode == 403) {
-        // 🔒 Handle Access Denied
         showDialog(
           context: context,
           builder: (_) => AlertDialog(

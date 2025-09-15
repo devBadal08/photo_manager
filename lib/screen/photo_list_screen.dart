@@ -925,7 +925,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             final isLocal = photo['local'] == true;
             final localPath = photo['path'];
             final serverPath =
-                "https://test.techstrota.com/storage/${photo['path']}";
+                "http://192.168.1.4:8000/storage/${photo['path']}";
             final filename = photo['path'].split('/').last;
             final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
             final isSelected = selectedImages.contains(localPath);

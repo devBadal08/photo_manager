@@ -41,26 +41,21 @@ class PhotoService {
     required String folderName,
     required String token,
   }) async {
-    final url = Uri.parse('https://test.techstrota.com/api/photos/uploadAll');
+    final url = Uri.parse('http://192.168.1.4:8000/api/photos/uploadAll');
 
     try {
       final request = http.MultipartRequest('POST', url)
         ..headers['Authorization'] = 'Bearer $token'
-        ..fields['folders[]'] = folderName
+        ..fields['folders[0]'] = folderName
         ..files.add(
-          await http.MultipartFile.fromPath('images[]', imageFile.path),
+          await http.MultipartFile.fromPath('images[0]', imageFile.path),
         );
 
       final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+      print("📡 Upload response: ${response.statusCode} -> $responseBody");
 
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        final errorBody = await response.stream.bytesToString();
-        print('❌ Server responded with ${response.statusCode}');
-        print('❌ Error Body: $errorBody');
-        return false;
-      }
+      return response.statusCode == 200 && responseBody.contains("Upload");
     } catch (e) {
       print('❌ Error uploading image: $e');
       return false;
@@ -135,7 +130,7 @@ class PhotoService {
 
   Future<void> uploadAllImagesForUser() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = prefs.getString('auth_token');
     //final userId = prefs.getString('user_id');
 
     if (token == null) {
@@ -356,7 +351,7 @@ class PhotoService {
 
         final request = http.MultipartRequest(
           'POST',
-          Uri.parse('https://test.techstrota.com/api/photos/uploadAll'),
+          Uri.parse('http://192.168.1.4:8000/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 

@@ -80,8 +80,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
         if (logo.startsWith("http")) {
           _companyLogo = logo; // full URL
         } else {
-          _companyLogo =
-              "https://test.techstrota.com/storage/company-logos/$logo";
+          _companyLogo = "http://192.168.1.4:8000/storage/company-logos/$logo";
         }
       }
     });
@@ -268,8 +267,9 @@ class _CustomDrawerState extends State<CustomDrawer> {
   }
 
   void _showLogoutDialog(BuildContext context) {
-    FolderService().showLogoutDialog(context, () {
+    FolderService().showLogoutDialog(context, () async {
       if (mounted) {
+        await FolderService().logoutUser();
         // 1️⃣ Close the logout confirmation dialog
         Navigator.of(context).pop();
 

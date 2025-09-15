@@ -103,7 +103,12 @@ class FolderService {
 
   Future<void> logoutUser() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    await prefs.remove('auth_token');
+    await prefs.remove('email');
+    await prefs.remove('password');
+    await prefs.remove('user_id');
+    await prefs.remove('user_name');
+    await prefs.remove('company_logo');
   }
 
   Future<File?> pickAndSaveAvatar() async {
@@ -136,6 +141,7 @@ class FolderService {
           ),
           TextButton(
             onPressed: () {
+              logoutUser();
               Navigator.pop(ctx); // Close dialog
               onConfirm();
             },
