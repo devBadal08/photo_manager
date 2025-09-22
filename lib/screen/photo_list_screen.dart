@@ -42,6 +42,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   String searchQuery = '';
   List<Directory> filteredFolders = [];
   //List<File> filteredImages = [];
+  List<Map<String, dynamic>> _newlyTakenPhotos = [];
 
   String get _mainFolderName => widget.isShared
       ? (widget.sharedFolderName ?? "Shared Folder")
@@ -78,37 +79,43 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     );
     if (!await dir.exists()) await dir.create(recursive: true);
 
-    // 📂 Local images
+    // 🔄 Get uploaded files
+    final uploadedSet = PhotoService.uploadedFiles.value;
+
+    // 📂 Local images (only pending)
     final localFiles = dir
         .listSync()
         .whereType<File>()
-        .where((f) => isImage(f.path))
+        .where((f) => isImage(f.path) && !uploadedSet.contains(f.path))
         .toList();
 
-    // 🔄 Filter out already uploaded files
-    final uploadedSet = PhotoService.uploadedFiles.value;
     final localPhotos = localFiles
-        .where((f) => !uploadedSet.contains(f.path)) // ✅ only keep pending
         .map((f) => {"path": f.path, "local": true})
         .toList();
 
-    // 🌐 Server images
+    // 🌐 Server images (not uploaded by this device)
     final service = FolderShareService();
     final data = await service.getSharedFolderPhotos(folderId);
 
     List<Map<String, dynamic>> serverPhotos = [];
     if (data != null && data['success'] == true) {
-      serverPhotos = List<Map<String, dynamic>>.from(data['photos']).map((p) {
-        return {"path": p['path'], "local": false};
-      }).toList();
+      serverPhotos = List<Map<String, dynamic>>.from(
+        data['photos'],
+      ).map((p) => {"path": p['path'], "local": false}).toList();
     }
 
-    // ✅ Merge (no duplicates now)
-    final allPhotos = [...localPhotos, ...serverPhotos];
-    // ✅ Merge (dedupe by filename instead of full path)
+    // 🔹 Remove uploaded files from _newlyTakenPhotos
+    _newlyTakenPhotos = _newlyTakenPhotos
+        .where((p) => !uploadedSet.contains(p['path']))
+        .toList();
+
+    // ✅ Merge all photos
+    final allPhotos = [..._newlyTakenPhotos, ...localPhotos, ...serverPhotos];
+
+    // ✅ Remove duplicates by filename
     final uniquePhotos = <String, Map<String, dynamic>>{};
     for (var photo in allPhotos) {
-      final filename = photo['path'].split('/').last; // use only filename
+      final filename = photo['path'].split('/').last;
       uniquePhotos[filename] = photo;
     }
 
@@ -179,7 +186,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   Future<void> _takePhoto() async {
     final List<CameraDescription> cameras = await availableCameras();
 
-    final capturedImagePath = await Navigator.push<List<String>>(
+    final capturedImagePaths = await Navigator.push<List<String>>(
       context,
       MaterialPageRoute(
         builder: (_) => CameraScreen(
@@ -190,24 +197,27 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       ),
     );
 
-    if (capturedImagePath != null && capturedImagePath.isNotEmpty) {
+    if (capturedImagePaths != null && capturedImagePaths.isNotEmpty) {
       if (widget.isShared) {
-        // ✅ Add photo to shared folder list (local preview only)
+        for (var path in capturedImagePaths) {
+          // ✅ Only add if not uploaded yet
+          if (!PhotoService.uploadedFiles.value.contains(path)) {
+            _newlyTakenPhotos.add({"path": path, "local": true});
+          }
+        }
+
         _loadSharedPhotos(widget.sharedFolderId!);
       } else {
         _loadItems();
       }
     }
 
-    // 🔄 Refresh after photo
-    if (widget.isShared) {
-      _loadSharedPhotos(widget.sharedFolderId!);
-    } else {
-      _loadItems();
-    }
-
+    // Auto-upload if enabled
     if (AutoUploadService.instance.isEnabled) {
       await AutoUploadService.instance.uploadNow();
+
+      // Do NOT reload shared photos to avoid showing uploaded ones
+      if (!widget.isShared) _loadItems();
     }
   }
 
@@ -239,7 +249,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     }
 
     dirs.sort((a, b) => b.statSync().changed.compareTo(a.statSync().changed));
-
+    if (!mounted) return;
     setState(() {
       folderItems = dirs;
       imageItems = files;
@@ -906,27 +916,36 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     return ValueListenableBuilder<Set<String>>(
       valueListenable: PhotoService.uploadedFiles,
       builder: (context, uploadedSet, _) {
-        // 🔥 Filter by filename (avoid duplicates from server + local)
-        final filteredPhotos = photos.where((p) {
+        // Filter newly taken photos to exclude uploaded ones
+        final displayedPhotos = photos.where((p) {
           final filename = p['path'].split('/').last;
           return !uploadedSet.any((uploaded) => uploaded.endsWith(filename));
         }).toList();
 
+        if (displayedPhotos.isEmpty) {
+          return Center(
+            child: Text(
+              "No images yet in shared folder",
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          );
+        }
+
         return GridView.builder(
           padding: const EdgeInsets.all(8),
-          itemCount: filteredPhotos.length,
+          itemCount: displayedPhotos.length,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
             crossAxisSpacing: 4,
             mainAxisSpacing: 4,
           ),
           itemBuilder: (context, index) {
-            final photo = filteredPhotos[index];
+            final photo = displayedPhotos[index];
             final isLocal = photo['local'] == true;
             final localPath = photo['path'];
             final serverPath =
                 "http://192.168.1.4:8000/storage/${photo['path']}";
-            final filename = photo['path'].split('/').last;
+            final filename = localPath.split('/').last;
             final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
             final isSelected = selectedImages.contains(localPath);
 
@@ -953,7 +972,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     context,
                     MaterialPageRoute(
                       builder: (_) => GalleryScreen(
-                        images: photos.map((p) => File(p['path'])).toList(),
+                        images: displayedPhotos
+                            .map((p) => File(p['path']))
+                            .toList(),
                         startIndex: index,
                       ),
                     ),
@@ -984,8 +1005,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                             ),
                     ),
                   ),
-
-                  // ✅ Selection checkbox
+                  // Selection checkbox
                   if (selectionMode)
                     Positioned(
                       top: 6,
@@ -1005,8 +1025,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                         checkColor: Colors.white,
                       ),
                     ),
-
-                  // ✅ Uploaded green tick
+                  // Uploaded tick
                   if (isUploaded)
                     Positioned(
                       right: 6,

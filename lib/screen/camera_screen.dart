@@ -27,6 +27,8 @@ class _CameraScreenState extends State<CameraScreen> {
   bool _isCapturing = false;
   List<CameraDescription> cameras = [];
   double _thumbnailScale = 1.0;
+  bool _isVideoMode = false;
+  bool _isRecording = false;
 
   @override
   void initState() {
@@ -116,6 +118,46 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
+  Future<void> _startVideoRecording() async {
+    if (!_controller.value.isInitialized || _isRecording) return;
+
+    try {
+      await _controller.startVideoRecording();
+      setState(() => _isRecording = true);
+    } catch (e) {
+      debugPrint("Error starting video recording: $e");
+    }
+  }
+
+  Future<void> _stopVideoRecording() async {
+    if (!_controller.value.isInitialized || !_isRecording) return;
+
+    try {
+      final XFile videoFile = await _controller.stopVideoRecording();
+      File savedVideo = File(videoFile.path);
+
+      if (widget.saveFolder != null) {
+        final newPath =
+            '${widget.saveFolder!.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
+        await savedVideo.copy(newPath);
+      } else if (widget.sharedFolderId != null) {
+        final dir = Directory(
+          '/storage/emulated/0/Pictures/MyApp/Shared/${widget.sharedFolderId}',
+        );
+        if (!await dir.exists()) {
+          await dir.create(recursive: true);
+        }
+        final newPath =
+            '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.mp4';
+        await savedVideo.copy(newPath);
+      }
+
+      setState(() => _isRecording = false);
+    } catch (e) {
+      debugPrint("Error stopping video recording: $e");
+    }
+  }
+
   void _switchCamera() async {
     if (cameras.length < 2) return; // no second camera available
     _currentCameraIndex = (_currentCameraIndex + 1) % cameras.length;
@@ -124,11 +166,14 @@ class _CameraScreenState extends State<CameraScreen> {
     await initCamera(); // ✅ reinitialize with new camera
   }
 
-  void _openFullScreenImage(File imageFile) {
+  void _openFullScreenImage(int initialIndex) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => FullScreenImageView(imageFile: imageFile),
+        builder: (_) => FullScreenGalleryView(
+          images: capturedImages,
+          initialIndex: initialIndex,
+        ),
       ),
     );
   }
@@ -224,8 +269,8 @@ class _CameraScreenState extends State<CameraScreen> {
                                   const Duration(milliseconds: 200),
                                 ); // wait for zoom back
                                 _openFullScreenImage(
-                                  capturedImages.last,
-                                ); // navigate AFTER animation
+                                  capturedImages.length - 1,
+                                ); // last image index
                               },
                               onTapCancel: () {
                                 setState(() => _thumbnailScale = 1.0);
@@ -287,9 +332,52 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 }
 
-class FullScreenImageView extends StatelessWidget {
-  final File imageFile;
-  const FullScreenImageView({super.key, required this.imageFile});
+class FullScreenGalleryView extends StatefulWidget {
+  final List<File> images;
+  final int initialIndex;
+
+  const FullScreenGalleryView({
+    super.key,
+    required this.images,
+    this.initialIndex = 0,
+  });
+
+  @override
+  State<FullScreenGalleryView> createState() => _FullScreenGalleryViewState();
+}
+
+class _FullScreenGalleryViewState extends State<FullScreenGalleryView> {
+  late PageController _pageController;
+  late int _currentIndex;
+  TransformationController _transformationController =
+      TransformationController();
+  TapDownDetails? _doubleTapDetails;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: _currentIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _transformationController.dispose();
+    super.dispose();
+  }
+
+  void _handleDoubleTap(TapDownDetails details) {
+    final position = details.localPosition;
+
+    if (_transformationController.value != Matrix4.identity()) {
+      _transformationController.value = Matrix4.identity();
+    } else {
+      _transformationController.value = Matrix4.identity()
+        ..translate(-position.dx * 2, -position.dy * 2)
+        ..scale(3.0); // adjust zoom level
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -300,8 +388,39 @@ class FullScreenImageView extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: theme.appBarTheme.backgroundColor,
         iconTheme: theme.appBarTheme.iconTheme,
+        title: Text('${_currentIndex + 1}/${widget.images.length}'),
       ),
-      body: Center(child: Image.file(imageFile, fit: BoxFit.contain)),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.images.length,
+        onPageChanged: (index) {
+          setState(() => _currentIndex = index);
+          _transformationController.value =
+              Matrix4.identity(); // reset zoom on page change
+        },
+        itemBuilder: (_, index) {
+          return Center(
+            child: GestureDetector(
+              onDoubleTapDown: (details) {
+                _doubleTapDetails = details; // store tap position
+              },
+              onDoubleTap: () {
+                if (_doubleTapDetails != null) {
+                  _handleDoubleTap(_doubleTapDetails!);
+                }
+              },
+              child: InteractiveViewer(
+                transformationController: _transformationController,
+                panEnabled: true,
+                scaleEnabled: true,
+                minScale: 1.0,
+                maxScale: 5.0,
+                child: Image.file(widget.images[index], fit: BoxFit.contain),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
