@@ -67,10 +67,16 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   List<dynamic> images = [];
 
-  bool isImage(String filePath) {
-    final imageExtensions = ['jpg', 'jpeg', 'png', 'pdf', 'docx'];
+  bool isMedia(String filePath) {
+    final mediaExtensions = ['jpg', 'jpeg', 'png', 'mp4'];
     final extension = filePath.split('.').last.toLowerCase();
-    return imageExtensions.contains(extension);
+    return mediaExtensions.contains(extension);
+  }
+
+  bool isVideo(String filePath) {
+    final videoExtensions = ['mp4'];
+    final extension = filePath.split('.').last.toLowerCase();
+    return videoExtensions.contains(extension);
   }
 
   Future<void> _loadSharedPhotos(int folderId) async {
@@ -82,11 +88,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     // 🔄 Get uploaded files
     final uploadedSet = PhotoService.uploadedFiles.value;
 
-    // 📂 Local images (only pending)
+    // 📂 Local images & videos (only pending)
     final localFiles = dir
         .listSync()
         .whereType<File>()
-        .where((f) => isImage(f.path) && !uploadedSet.contains(f.path))
+        .where((f) => isMedia(f.path) && !uploadedSet.contains(f.path))
         .toList();
 
     final localPhotos = localFiles
@@ -198,6 +204,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     );
 
     if (capturedImagePaths != null && capturedImagePaths.isNotEmpty) {
+      await Future.delayed(
+        const Duration(milliseconds: 500),
+      ); // wait for OS write
       if (widget.isShared) {
         for (var path in capturedImagePaths) {
           // ✅ Only add if not uploaded yet
@@ -223,11 +232,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   Future<void> _loadItems() async {
     final folder = widget.folder;
-    if (folder == null) {
-      return; // Nothing to load in shared mode
-    }
-
-    if (!await folder.exists()) return;
+    if (folder == null || !await folder.exists()) return;
 
     final dirs = <Directory>[];
     final files = <File>[];
@@ -238,21 +243,17 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
         if (sub.toLowerCase() != _mainFolderName.toLowerCase()) {
           dirs.add(entity);
         }
-      } else if (entity is File) {
-        final ext = entity.path.toLowerCase();
-        if (ext.endsWith('.jpg') ||
-            ext.endsWith('.jpeg') ||
-            ext.endsWith('.png')) {
-          files.add(entity);
-        }
+      } else if (entity is File && isMedia(entity.path)) {
+        files.add(entity);
       }
     }
 
     dirs.sort((a, b) => b.statSync().changed.compareTo(a.statSync().changed));
     if (!mounted) return;
+
     setState(() {
       folderItems = dirs;
-      imageItems = files;
+      imageItems = files; // now contains images + videos
       items = [...dirs, ...files];
       filteredFolders = List.from(dirs);
     });
@@ -676,7 +677,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     final imageFiles = <File>[];
 
                     for (var entity in dir.listSync(recursive: true)) {
-                      if (entity is File && isImage(entity.path)) {
+                      if (entity is File && isMedia(entity.path)) {
                         imageFiles.add(entity);
                       }
                     }
@@ -805,23 +806,21 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     );
   }
 
-  Widget _buildImageGrid(List<File> images) {
+  Widget _buildImageGrid(List<File> files) {
     return ValueListenableBuilder<Set<String>>(
       valueListenable: PhotoService.uploadedFiles,
       builder: (context, uploadedSet, _) {
         return GridView.builder(
           padding: const EdgeInsets.all(8),
-          itemCount: images.length,
+          itemCount: files.length,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
             crossAxisSpacing: 4,
             mainAxisSpacing: 4,
           ),
           itemBuilder: (context, index) {
-            final file = images[index];
-            final isUploaded = PhotoService.uploadedFiles.value.contains(
-              file.path,
-            );
+            final file = files[index];
+            final isUploaded = uploadedSet.contains(file.path);
             final isSelected = selectedImages.contains(file.path);
 
             return GestureDetector(
@@ -835,7 +834,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 if (selectionMode) {
                   setState(() {
                     if (isSelected) {
-                      selectedImages.remove(file);
+                      selectedImages.remove(file.path);
                     } else {
                       selectedImages.add(file.path);
                     }
@@ -845,7 +844,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     context,
                     MaterialPageRoute(
                       builder: (_) =>
-                          GalleryScreen(images: images, startIndex: index),
+                          GalleryScreen(images: files, startIndex: index),
                     ),
                   );
                 }
@@ -855,20 +854,34 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   Positioned.fill(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        file,
-                        fit: BoxFit.cover,
-                        cacheWidth: 300,
-                        cacheHeight: 300,
-                        errorBuilder: (_, __, ___) =>
-                            const Icon(Icons.broken_image),
-                      ),
+                      child: isVideo(file.path)
+                          ? Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Container(color: Colors.black12),
+                                const Center(
+                                  child: Icon(
+                                    Icons.videocam,
+                                    color: Colors.white70,
+                                    size: 40,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Image.file(
+                              file,
+                              fit: BoxFit.cover,
+                              cacheWidth: 300,
+                              cacheHeight: 300,
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.broken_image),
+                            ),
                     ),
                   ),
-
-                  // ✅ Checkbox for selection mode
                   if (selectionMode)
                     Positioned(
+                      top: 6,
+                      left: 6,
                       child: Checkbox(
                         value: isSelected,
                         onChanged: (checked) {
@@ -876,7 +889,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                             if (checked == true) {
                               selectedImages.add(file.path);
                             } else {
-                              selectedImages.remove(file);
+                              selectedImages.remove(file.path);
                             }
                           });
                         },
@@ -884,8 +897,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                         checkColor: Colors.white,
                       ),
                     ),
-
-                  // ✅ Uploaded checkmark (green)
                   if (isUploaded)
                     Positioned(
                       right: 6,
@@ -986,23 +997,37 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   Positioned.fill(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: isLocal
-                          ? Image.file(
-                              File(localPath),
-                              fit: BoxFit.cover,
-                              cacheWidth: 300,
-                              cacheHeight: 300,
-                              errorBuilder: (_, __, ___) =>
-                                  const Icon(Icons.broken_image),
+                      child: isVideo(localPath)
+                          ? Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Container(color: Colors.black12),
+                                const Center(
+                                  child: Icon(
+                                    Icons.videocam,
+                                    color: Colors.white70,
+                                    size: 40,
+                                  ),
+                                ),
+                              ],
                             )
-                          : Image.network(
-                              serverPath,
-                              fit: BoxFit.cover,
-                              cacheWidth: 300,
-                              cacheHeight: 300,
-                              errorBuilder: (_, __, ___) =>
-                                  const Icon(Icons.broken_image),
-                            ),
+                          : (isLocal
+                                ? Image.file(
+                                    File(localPath),
+                                    fit: BoxFit.cover,
+                                    cacheWidth: 300,
+                                    cacheHeight: 300,
+                                    errorBuilder: (_, __, ___) =>
+                                        const Icon(Icons.broken_image),
+                                  )
+                                : Image.network(
+                                    serverPath,
+                                    fit: BoxFit.cover,
+                                    cacheWidth: 300,
+                                    cacheHeight: 300,
+                                    errorBuilder: (_, __, ___) =>
+                                        const Icon(Icons.broken_image),
+                                  )),
                     ),
                   ),
                   // Selection checkbox

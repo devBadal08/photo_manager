@@ -235,33 +235,40 @@ class PhotoService {
       return;
     }
 
+    // Collect image and video files
     List<File> imageFiles = [];
+    List<File> videoFiles = [];
     List<String> folderNames = [];
 
     for (var entity in baseDir.listSync(recursive: true)) {
-      if (entity is File && isImageFileType(entity.path)) {
-        imageFiles.add(entity);
+      if (entity is File) {
         final relativePath = entity.parent.path.replaceFirst(
           baseDir.path + '/',
           '',
         );
         folderNames.add(relativePath);
+
+        if (isImageFileType(entity.path)) {
+          imageFiles.add(entity);
+        } else if (isVideoFileType(entity.path)) {
+          videoFiles.add(entity);
+        }
       }
     }
 
-    if (imageFiles.isEmpty) {
+    if (imageFiles.isEmpty && videoFiles.isEmpty) {
       if (!silent && context != null && context.mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text("No images found")));
+        ).showSnackBar(const SnackBar(content: Text("No media found")));
       }
       return;
     }
 
-    // Pair files with their folders
+    final allFiles = [...imageFiles, ...videoFiles];
     final fileFolderPairs = List.generate(
-      imageFiles.length,
-      (i) => MapEntry(imageFiles[i], folderNames[i]),
+      allFiles.length,
+      (i) => MapEntry(allFiles[i], folderNames[i]),
     );
 
     // Filter only not uploaded
@@ -275,9 +282,9 @@ class PhotoService {
 
     if (notUploadedPairs.isEmpty) {
       if (!silent && context != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("No new images to upload")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("No new media to upload")));
       }
       return;
     }
@@ -285,14 +292,14 @@ class PhotoService {
     final notUploadedFiles = notUploadedPairs.map((e) => e.key).toList();
     final notUploadedFolders = notUploadedPairs.map((e) => e.value).toList();
 
-    // ✅ Ask confirmation only if not silent
+    // Ask for confirmation
     if (!silent && context != null && context.mounted) {
       final confirm = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text("Upload Confirmation"),
           content: Text(
-            "Do you want to upload ${notUploadedFiles.length} images to the server?",
+            "Do you want to upload ${notUploadedFiles.length} media files to the server?",
           ),
           actions: [
             TextButton(
@@ -309,9 +316,9 @@ class PhotoService {
       if (confirm != true) return;
     }
 
-    // ✅ Show progress dialog only if not silent
+    // Show progress dialog
     final uploadedCount = ValueNotifier<int>(0);
-    final totalImages = notUploadedFiles.length;
+    final totalFiles = notUploadedFiles.length;
 
     if (!silent && context != null && context.mounted) {
       showDialog(
@@ -328,7 +335,7 @@ class PhotoService {
                   const SizedBox(width: 20),
                   Expanded(
                     child: Text(
-                      "${((count / totalImages) * 100).toStringAsFixed(0)}% uploading images",
+                      "${((count / totalFiles) * 100).toStringAsFixed(0)}% uploading media",
                     ),
                   ),
                 ],
@@ -339,7 +346,7 @@ class PhotoService {
       );
     }
 
-    // ✅ Start uploading
+    // Start uploading
     try {
       const batchSize = 10;
       bool allSuccess = true;
@@ -357,18 +364,30 @@ class PhotoService {
 
         for (int i = start; i < end; i++) {
           request.fields['folders[${i - start}]'] = notUploadedFolders[i];
-          final compressed = await compressImage(notUploadedFiles[i]);
-          final length = await compressed.length();
-          final stream = http.ByteStream(compressed.openRead());
+          final file = notUploadedFiles[i];
 
-          request.files.add(
-            http.MultipartFile(
+          http.MultipartFile multipartFile;
+          if (isImageFileType(file.path)) {
+            final compressed = await compressImage(file);
+            final length = await compressed.length();
+            multipartFile = http.MultipartFile(
               'images[${i - start}]',
-              stream,
+              http.ByteStream(compressed.openRead()),
               length,
               filename: compressed.path.split('/').last,
-            ),
-          );
+            );
+          } else {
+            // video file
+            final length = await file.length();
+            multipartFile = http.MultipartFile(
+              'videos[${i - start}]',
+              http.ByteStream(file.openRead()),
+              length,
+              filename: file.path.split('/').last,
+            );
+          }
+
+          request.files.add(multipartFile);
         }
 
         final response = await request.send();
@@ -390,7 +409,7 @@ class PhotoService {
         }
       }
 
-      // ✅ Close progress dialog only if not silent
+      // Close progress dialog
       if (!silent && context != null && context.mounted) {
         Navigator.pop(context);
       }
@@ -413,5 +432,11 @@ class PhotoService {
       }
       debugPrint("❌ Upload error: $e");
     }
+  }
+
+  // Helper to check video file types
+  static bool isVideoFileType(String path) {
+    final ext = path.toLowerCase();
+    return ext.endsWith('.mp4');
   }
 }

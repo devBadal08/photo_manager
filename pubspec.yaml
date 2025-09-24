@@ -52,6 +52,9 @@ dependencies:
   share_plus: ^11.1.0
   dice_bear: ^0.1.7
   flutter_svg: ^2.2.0
+  video_player: ^2.10.0
+  video_thumbnail: ^0.5.6
+  video_compress: ^3.1.0
 
 flutter_icons:
   android: true

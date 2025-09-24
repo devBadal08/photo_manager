@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:photomanager_practice/screen/image_editor_screen.dart';
+import 'package:video_player/video_player.dart'; // 👈 for video playback
 
 class GalleryScreen extends StatefulWidget {
   final List<File> images;
@@ -18,10 +19,15 @@ class GalleryScreen extends StatefulWidget {
 class _GalleryScreenState extends State<GalleryScreen> {
   late List<File> images;
 
+  bool isVideo(File file) {
+    final ext = file.path.toLowerCase().split(".").last;
+    return ["mp4"].contains(ext);
+  }
+
   @override
   void initState() {
     super.initState();
-    images = List<File>.from(widget.images); // mutable copy
+    images = List<File>.from(widget.images);
   }
 
   @override
@@ -41,34 +47,113 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
           return GestureDetector(
             onTap: () async {
-              final editedResult = await Navigator.push<Map<String, dynamic>?>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ImageEditorScreen(
-                    images: images, // pass ALL images
-                    initialIndex: index, // start from tapped image
+              if (isVideo(file)) {
+                // 👉 Open video player instead of ImageEditor
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => VideoPlayerScreen(videoFile: file),
                   ),
-                ),
-              );
+                );
+              } else {
+                // 👉 Open image editor for photos
+                final editedResult =
+                    await Navigator.push<Map<String, dynamic>?>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ImageEditorScreen(
+                          images: images,
+                          initialIndex: index,
+                        ),
+                      ),
+                    );
 
-              // Expect result like: { "index": i, "file": editedFile }
-              if (editedResult != null &&
-                  editedResult["index"] != null &&
-                  editedResult["file"] != null) {
-                setState(() {
-                  images[editedResult["index"]] = editedResult["file"];
-                });
+                if (editedResult != null &&
+                    editedResult["index"] != null &&
+                    editedResult["file"] != null) {
+                  setState(() {
+                    images[editedResult["index"]] = editedResult["file"];
+                  });
+                }
               }
             },
-            child: Image.file(
-              file,
-              fit: BoxFit.cover,
-              cacheWidth: 300,
-              cacheHeight: 300,
-              errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
-            ),
+            child: isVideo(file)
+                ? Container(
+                    color: Colors.black54,
+                    child: const Center(
+                      child: Icon(
+                        Icons.play_circle_fill,
+                        size: 60,
+                        color: Colors.white,
+                      ),
+                    ),
+                  )
+                : Image.file(
+                    file,
+                    fit: BoxFit.cover,
+                    cacheWidth: 300,
+                    cacheHeight: 300,
+                    errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.broken_image, size: 50),
+                  ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// ==================== VideoPlayerScreen ====================
+class VideoPlayerScreen extends StatefulWidget {
+  final File videoFile;
+  const VideoPlayerScreen({super.key, required this.videoFile});
+
+  @override
+  State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
+}
+
+class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+  late VideoPlayerController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.file(widget.videoFile)
+      ..initialize().then((_) {
+        setState(() {});
+        _controller.play();
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Video")),
+      body: Center(
+        child: _controller.value.isInitialized
+            ? AspectRatio(
+                aspectRatio: _controller.value.aspectRatio,
+                child: VideoPlayer(_controller),
+              )
+            : const CircularProgressIndicator(),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          setState(() {
+            _controller.value.isPlaying
+                ? _controller.pause()
+                : _controller.play();
+          });
+        },
+        child: Icon(
+          _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+        ),
       ),
     );
   }
