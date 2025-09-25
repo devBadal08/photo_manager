@@ -192,7 +192,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   Future<void> _takePhoto() async {
     final List<CameraDescription> cameras = await availableCameras();
 
-    final capturedImagePaths = await Navigator.push<List<String>>(
+    final capturedPaths = await Navigator.push<List<String>>(
       context,
       MaterialPageRoute(
         builder: (_) => CameraScreen(
@@ -203,21 +203,24 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       ),
     );
 
-    if (capturedImagePaths != null && capturedImagePaths.isNotEmpty) {
-      await Future.delayed(
-        const Duration(milliseconds: 500),
-      ); // wait for OS write
+    if (capturedPaths != null && capturedPaths.isNotEmpty) {
+      // ✅ wait a bit to ensure OS finished writing files
+      await Future.delayed(const Duration(milliseconds: 500));
+
       if (widget.isShared) {
-        for (var path in capturedImagePaths) {
-          // ✅ Only add if not uploaded yet
+        for (var path in capturedPaths) {
           if (!PhotoService.uploadedFiles.value.contains(path)) {
             _newlyTakenPhotos.add({"path": path, "local": true});
           }
         }
-
         _loadSharedPhotos(widget.sharedFolderId!);
       } else {
-        _loadItems();
+        // For personal folders, add directly to imageItems
+        setState(() {
+          final newFiles = capturedPaths.map((p) => File(p)).toList();
+          imageItems.addAll(newFiles);
+          items = [...folderItems, ...imageItems];
+        });
       }
     }
 
@@ -225,8 +228,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     if (AutoUploadService.instance.isEnabled) {
       await AutoUploadService.instance.uploadNow();
 
-      // Do NOT reload shared photos to avoid showing uploaded ones
-      if (!widget.isShared) _loadItems();
+      if (!widget.isShared) _loadItems(); // optional: re-scan
     }
   }
 
@@ -774,7 +776,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 final imageCount = snapshot.data?['images'] ?? 0;
 
                 return Text(
-                  'Subfolders: $subfolderCount\nImages: $imageCount',
+                  'Subfolders: $subfolderCount\n'
+                  'Images: $imageCount    Videos: ${snapshot.data?['videos'] ?? 0}',
                   style: Theme.of(context).textTheme.bodySmall,
                 );
               },
@@ -869,7 +872,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                               ],
                             )
                           : Image.file(
-                              file,
+                              file, // forces rebuild
                               fit: BoxFit.cover,
                               cacheWidth: 300,
                               cacheHeight: 300,

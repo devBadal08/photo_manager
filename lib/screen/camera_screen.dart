@@ -40,13 +40,6 @@ class _CameraScreenState extends State<CameraScreen> {
   bool _isRecording = false;
   FlashMode _flashMode = FlashMode.off;
 
-  // Zoom
-  double _currentZoomLevel = 1.0;
-  double _minZoomLevel = 1.0;
-  double _maxZoomLevel = 1.0;
-  double _zoomSliderValue = 1.0;
-  bool _showZoomSlider = false;
-
   @override
   void initState() {
     super.initState();
@@ -66,11 +59,6 @@ class _CameraScreenState extends State<CameraScreen> {
 
     await _controller.initialize();
     await _controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
-
-    // Get min/max zoom levels
-    _minZoomLevel = await _controller.getMinZoomLevel();
-    _maxZoomLevel = await _controller.getMaxZoomLevel();
-    _zoomSliderValue = _currentZoomLevel = _minZoomLevel;
 
     if (!mounted) return;
     setState(() => _isCameraInitialized = true);
@@ -98,11 +86,14 @@ class _CameraScreenState extends State<CameraScreen> {
       if (!await dir.exists()) await dir.create(recursive: true);
       await compressedFile.copy(newPath);
 
-      setState(
-        () => capturedMedia.add(
+      // Delay briefly to ensure file is ready
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      setState(() {
+        capturedMedia.add(
           MediaFile(file: File(newPath), type: MediaType.image),
-        ),
-      );
+        );
+      });
     } catch (e) {
       debugPrint("Error capturing photo: $e");
     } finally {
@@ -113,6 +104,10 @@ class _CameraScreenState extends State<CameraScreen> {
   Future<void> _startVideoRecording() async {
     if (!_controller.value.isInitialized || _isRecording) return;
     try {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+      await _controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
       await _controller.prepareForVideoRecording();
       await _controller.startVideoRecording();
       setState(() => _isRecording = true);
@@ -126,31 +121,37 @@ class _CameraScreenState extends State<CameraScreen> {
 
     try {
       final XFile videoFile = await _controller.stopVideoRecording();
+      await _controller.unlockCaptureOrientation();
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
       setState(() => _isRecording = false);
 
-      // Compress the video aggressively but keep decent quality
+      // Compress video
       final MediaInfo? compressedVideo = await VideoCompress.compressVideo(
         videoFile.path,
-        quality: VideoQuality.LowQuality, // More compression
-        deleteOrigin: false, // Keep original
+        quality: VideoQuality.LowQuality,
+        deleteOrigin: false,
         includeAudio: true,
-        frameRate: 24, // Lower FPS reduces size
+        frameRate: 24,
       );
 
       if (compressedVideo == null) return;
 
-      // Prepare save path
       final String newVideoPath = widget.saveFolder != null
           ? '${widget.saveFolder!.path}/${DateTime.now().millisecondsSinceEpoch}.mp4'
           : '/storage/emulated/0/Pictures/MyApp/Shared/${widget.sharedFolderId}/${DateTime.now().millisecondsSinceEpoch}.mp4';
 
       final dir = File(newVideoPath).parent;
       if (!await dir.exists()) await dir.create(recursive: true);
-
-      // Copy compressed file to destination
       await File(compressedVideo.path!).copy(newVideoPath);
 
-      // Add to captured media list
+      // Delay briefly
+      await Future.delayed(const Duration(milliseconds: 50));
+
       setState(() {
         capturedMedia.add(
           MediaFile(file: File(newVideoPath), type: MediaType.video),
@@ -179,100 +180,67 @@ class _CameraScreenState extends State<CameraScreen> {
     super.dispose();
   }
 
+  void _returnCapturedMedia() {
+    final paths = capturedMedia.map((m) => m.file.path).toList();
+    Navigator.pop(context, paths); // returns captured paths to folder grid
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_isCameraInitialized) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Camera preview with pinch & slider zoom
-          GestureDetector(
-            onScaleUpdate: (ScaleUpdateDetails details) async {
-              if (_controller.value.isInitialized) {
-                double zoom = _currentZoomLevel * details.scale;
-                zoom = zoom.clamp(_minZoomLevel, _maxZoomLevel);
-                await _controller.setZoomLevel(zoom);
-                _zoomSliderValue = zoom; // update slider
-              }
-            },
-            onScaleEnd: (details) async {
-              _currentZoomLevel =
-                  _zoomSliderValue; // last value is already tracked
-            },
-            onTap: () {
-              setState(() => _showZoomSlider = !_showZoomSlider);
-            },
-            child: FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: _controller.value.previewSize!.height,
-                height: _controller.value.previewSize!.width,
-                child: CameraPreview(_controller),
-              ),
-            ),
-          ),
-
-          // Zoom slider overlay
-          if (_showZoomSlider)
-            Positioned(
-              right: 10,
-              top: 50,
-              bottom: 100,
-              child: RotatedBox(
-                quarterTurns: -1,
-                child: Slider(
-                  min: _minZoomLevel,
-                  max: _maxZoomLevel,
-                  value: _zoomSliderValue,
-                  activeColor: Colors.yellow,
-                  inactiveColor: Colors.white30,
-                  onChanged: (value) async {
-                    _zoomSliderValue = value;
-                    await _controller.setZoomLevel(value);
-                    setState(() {});
-                  },
+    return WillPopScope(
+      onWillPop: () async {
+        // This is called when user presses the back button
+        _returnCapturedMedia();
+        return true; // allow pop
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _controller.value.previewSize!.height,
+                  height: _controller.value.previewSize!.width,
+                  child: CameraPreview(_controller),
                 ),
               ),
             ),
-
-          // Flash button
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.only(
-                top: 40,
-                right: 20,
-                left: 20,
-                bottom: 10,
-              ),
-              color: Colors.black.withOpacity(0.5),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      _flashMode == FlashMode.off
-                          ? Icons.flash_off
-                          : Icons.flash_on,
-                      color: Colors.white,
-                      size: 30,
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.only(
+                  top: 40,
+                  right: 20,
+                  left: 20,
+                  bottom: 10,
+                ),
+                color: Colors.black.withOpacity(0.5),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        _flashMode == FlashMode.off
+                            ? Icons.flash_off
+                            : Icons.flash_on,
+                        color: Colors.white,
+                        size: 30,
+                      ),
+                      onPressed: _toggleFlash,
                     ),
-                    onPressed: _toggleFlash,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-
-          // Bottom controls
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: SafeArea(
+            Align(
+              alignment: Alignment.bottomCenter,
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   vertical: 15,
@@ -316,8 +284,6 @@ class _CameraScreenState extends State<CameraScreen> {
                       ],
                     ),
                     const SizedBox(height: 10),
-
-                    // Capture row
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -345,8 +311,13 @@ class _CameraScreenState extends State<CameraScreen> {
                                     child:
                                         capturedMedia.last.type ==
                                             MediaType.image
-                                        ? Image.file(
-                                            capturedMedia.last.file,
+                                        ? Image(
+                                            key: ValueKey(
+                                              capturedMedia.last.file.path,
+                                            ),
+                                            image: FileImage(
+                                              capturedMedia.last.file,
+                                            ),
                                             fit: BoxFit.cover,
                                           )
                                         : Container(
@@ -382,8 +353,8 @@ class _CameraScreenState extends State<CameraScreen> {
                             }
                           },
                           child: Container(
-                            width: 65,
-                            height: 65,
+                            width: 70,
+                            height: 70,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(color: Colors.white, width: 4),
@@ -393,8 +364,6 @@ class _CameraScreenState extends State<CameraScreen> {
                             ),
                           ),
                         ),
-
-                        // Switch camera
                         IconButton(
                           icon: const Icon(
                             Icons.cameraswitch,
@@ -409,8 +378,8 @@ class _CameraScreenState extends State<CameraScreen> {
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FolderService {
@@ -18,58 +19,62 @@ class FolderService {
     return null;
   }
 
-  Future<Map<String, int>> countFoldersAndImages() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt('user_id');
+  Future<Map<String, int>> countFoldersImagesVideos() async {
+    int folderCount = 0;
+    int imageCount = 0;
+    int videoCount = 0;
 
-    if (userId == null) return {'folders': 0, 'images': 0};
+    final Directory appDir = await getApplicationDocumentsDirectory();
+    final List<FileSystemEntity> entities = appDir.listSync(recursive: true);
 
-    final Directory rootDir = Directory(
-      '/storage/emulated/0/Pictures/MyApp/$userId',
-    );
-    if (!rootDir.existsSync()) return {'folders': 0, 'images': 0};
-
-    int totalFolders = 0;
-    int totalImages = 0;
-
-    void traverse(Directory dir) {
-      for (FileSystemEntity entity in dir.listSync()) {
-        if (entity is Directory) {
-          totalFolders++;
-          traverse(entity);
-        } else if (entity is File &&
-            ['.jpg', '.jpeg', '.png'].any((ext) => entity.path.endsWith(ext))) {
-          totalImages++;
+    for (final entity in entities) {
+      if (entity is Directory) {
+        folderCount++;
+      } else if (entity is File) {
+        final path = entity.path.toLowerCase();
+        if (path.endsWith('.jpg') ||
+            path.endsWith('.jpeg') ||
+            path.endsWith('.png')) {
+          imageCount++;
+        } else if (path.endsWith('.mp4')) {
+          videoCount++;
         }
       }
     }
 
-    traverse(rootDir);
-    return {'folders': totalFolders, 'images': totalImages};
+    return {'folders': folderCount, 'images': imageCount, 'videos': videoCount};
   }
 
-  Future<Map<String, int>> countSubfoldersAndImages(Directory folder) async {
-    int subfolders = 0;
-    int images = 0;
+  Future<Map<String, int>> countSubfoldersImagesVideos(Directory folder) async {
+    int subfolderCount = 0;
+    int imageCount = 0;
+    int videoCount = 0;
 
-    if (!await folder.exists()) {
-      return {'subfolders': 0, 'images': 0}; // or throw a friendly error
-    }
+    final List<FileSystemEntity> entities = folder.listSync();
 
-    final files = folder.listSync();
-
-    for (var file in files) {
-      if (file is Directory) {
-        subfolders++;
-      } else if (file is File &&
-          (file.path.endsWith('.jpg') ||
-              file.path.endsWith('.jpeg') ||
-              file.path.endsWith('.png'))) {
-        images++;
+    for (final entity in entities) {
+      if (entity is Directory) {
+        subfolderCount++;
+      } else if (entity is File) {
+        final path = entity.path.toLowerCase();
+        if (path.endsWith('.jpg') ||
+            path.endsWith('.jpeg') ||
+            path.endsWith('.png')) {
+          imageCount++;
+        } else if (path.endsWith('.mp4') ||
+            path.endsWith('.mov') ||
+            path.endsWith('.mkv') ||
+            path.endsWith('.avi')) {
+          videoCount++;
+        }
       }
     }
 
-    return {'subfolders': subfolders, 'images': images};
+    return {
+      'subfolders': subfolderCount,
+      'images': imageCount,
+      'videos': videoCount,
+    };
   }
 
   Future<List<Directory>> loadFolders() async {

@@ -30,6 +30,7 @@ class _FolderScreenState extends State<FolderScreen>
   int folderCount = 0;
   int imageCount = 0;
   int totalImages = 0;
+  int videoCount = 0;
   // late final StreamSubscription _statusCheckSub;
 
   final FolderService folderService = FolderService();
@@ -72,11 +73,13 @@ class _FolderScreenState extends State<FolderScreen>
   }
 
   Future<void> _countFoldersAndImages() async {
-    final result = await folderService.countFoldersAndImages();
+    final result = await folderService.countFoldersImagesVideos();
     if (!mounted) return;
     setState(() {
       folderCount = result['folders'] ?? 0;
       imageCount = result['images'] ?? 0;
+      totalImages = imageCount; // keep your old variable if used elsewhere
+      videoCount = result['videos'] ?? 0; // <-- add this in state
     });
   }
 
@@ -492,7 +495,7 @@ class _FolderScreenState extends State<FolderScreen>
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             subtitle: FutureBuilder<Map<String, int>>(
-              future: folderService.countSubfoldersAndImages(folder),
+              future: folderService.countSubfoldersImagesVideos(folder),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
                   return const Text('Loading...');
@@ -501,7 +504,8 @@ class _FolderScreenState extends State<FolderScreen>
                 final imageCount = snapshot.data?['images'] ?? 0;
 
                 return Text(
-                  'Subfolders: $subfolderCount\nImages: $imageCount',
+                  'Subfolders: $subfolderCount\n'
+                  'Images: $imageCount    Videos: ${snapshot.data?['videos'] ?? 0}',
                   style: Theme.of(context).textTheme.bodySmall,
                 );
               },
