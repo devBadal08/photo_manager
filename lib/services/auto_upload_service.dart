@@ -82,7 +82,8 @@ class AutoUploadService {
             (f) =>
                 f.path.endsWith(".jpg") ||
                 f.path.endsWith(".jpeg") ||
-                f.path.endsWith(".png"),
+                f.path.endsWith(".png") ||
+                f.path.endsWith(".mp4"),
           )
           .toList();
 
