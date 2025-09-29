@@ -39,6 +39,8 @@ class _CameraScreenState extends State<CameraScreen> {
   bool _isVideoMode = false;
   bool _isRecording = false;
   FlashMode _flashMode = FlashMode.off;
+  double _currentZoom = 1.0;
+  double _baseZoom = 1.0;
 
   @override
   void initState() {
@@ -201,15 +203,35 @@ class _CameraScreenState extends State<CameraScreen> {
         body: Stack(
           children: [
             Positioned.fill(
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: _controller.value.previewSize!.height,
-                  height: _controller.value.previewSize!.width,
-                  child: CameraPreview(_controller),
+              child: GestureDetector(
+                onScaleStart: (details) {
+                  _baseZoom = _currentZoom;
+                },
+                onScaleUpdate: (details) async {
+                  if (_controller.value.isInitialized) {
+                    final maxZoom = await _controller.getMaxZoomLevel();
+                    final minZoom = await _controller.getMinZoomLevel();
+
+                    double newZoom = (_baseZoom * details.scale).clamp(
+                      minZoom,
+                      maxZoom,
+                    );
+
+                    await _controller.setZoomLevel(newZoom);
+                    setState(() => _currentZoom = newZoom);
+                  }
+                },
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: _controller.value.previewSize!.height,
+                    height: _controller.value.previewSize!.width,
+                    child: CameraPreview(_controller),
+                  ),
                 ),
               ),
             ),
+
             Positioned(
               top: 0,
               left: 0,
@@ -407,6 +429,10 @@ class _FullScreenMediaViewState extends State<FullScreenMediaView> {
   late int _currentIndex;
   VideoPlayerController? _videoController;
 
+  // Zoom related
+  double _currentScale = 1.0;
+  double _baseScale = 1.0;
+
   @override
   void initState() {
     super.initState();
@@ -449,25 +475,46 @@ class _FullScreenMediaViewState extends State<FullScreenMediaView> {
         onPageChanged: (index) {
           setState(() {
             _currentIndex = index;
+            _currentScale = 1.0; // Reset scale when changing media
             _loadVideoController();
           });
         },
         itemBuilder: (_, index) {
           final media = widget.media[index];
           if (media.type == MediaType.image) {
-            return Center(child: Image.file(media.file, fit: BoxFit.contain));
+            // Use InteractiveViewer for pinch-zoom
+            return Center(
+              child: InteractiveViewer(
+                maxScale: 5.0,
+                minScale: 1.0,
+                child: Image.file(media.file, fit: BoxFit.contain),
+              ),
+            );
           } else {
-            if (_videoController != null &&
-                _videoController!.value.isInitialized) {
-              return Center(
-                child: AspectRatio(
-                  aspectRatio: _videoController!.value.aspectRatio,
-                  child: VideoPlayer(_videoController!),
-                ),
-              );
-            } else {
-              return const Center(child: CircularProgressIndicator());
-            }
+            // Video pinch-zoom
+            return GestureDetector(
+              onScaleStart: (details) {
+                _baseScale = _currentScale;
+              },
+              onScaleUpdate: (details) {
+                setState(() {
+                  _currentScale = (_baseScale * details.scale).clamp(1.0, 3.0);
+                });
+              },
+              child: Center(
+                child:
+                    _videoController != null &&
+                        _videoController!.value.isInitialized
+                    ? Transform.scale(
+                        scale: _currentScale,
+                        child: AspectRatio(
+                          aspectRatio: _videoController!.value.aspectRatio,
+                          child: VideoPlayer(_videoController!),
+                        ),
+                      )
+                    : const CircularProgressIndicator(),
+              ),
+            );
           }
         },
       ),
