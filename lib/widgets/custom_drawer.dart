@@ -49,7 +49,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
 
   Future<void> _loadAvatarSeed() async {
     final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt("user_id");
+    final userId = prefs.getString("user_id");
     setState(() {
       if (userId != null) {
         _avatarSeed =
@@ -62,7 +62,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
 
   Future<void> _saveAvatarSeed(String seed) async {
     final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt("user_id");
+    final userId = prefs.getString("user_id");
     if (userId != null) {
       await prefs.setString("user_avatar_seed_$userId", seed);
       setState(() {
@@ -80,7 +80,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
         if (logo.startsWith("http")) {
           _companyLogo = logo; // full URL
         } else {
-          _companyLogo = "http://192.168.1.4:8000/storage/company-logos/$logo";
+          _companyLogo = "http://192.168.1.13:8000/storage/company-logos/$logo";
         }
       }
     });
@@ -177,7 +177,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
   Future<void> _deleteAllImages() async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
-      String? userId = prefs.getInt('user_id')?.toString();
+      String? userId = prefs.getString('user_id')?.toString();
       final directory = Directory("/storage/emulated/0/Pictures/MyApp/$userId");
 
       final uploaded = await _getUploadedFiles();

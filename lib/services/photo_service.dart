@@ -41,7 +41,7 @@ class PhotoService {
     required String folderName,
     required String token,
   }) async {
-    final url = Uri.parse('http://192.168.1.4:8000/api/photos/uploadAll');
+    final url = Uri.parse('http://192.168.1.13:8000/api/photos/uploadAll');
 
     try {
       final request = http.MultipartRequest('POST', url)
@@ -213,7 +213,7 @@ class PhotoService {
   }) async {
     await PhotoService.loadUploadedFiles();
     final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt('user_id')?.toString();
+    final userId = prefs.getString('user_id');
     final token = prefs.getString('auth_token');
 
     if (userId == null || token == null) {
@@ -284,6 +284,9 @@ class PhotoService {
     final videoPairs = notUploadedPairs
         .where((e) => isVideoFileType(e.key.path))
         .toList();
+    final pdfPairs = notUploadedPairs
+        .where((e) => e.key.path.toLowerCase().endsWith('.pdf'))
+        .toList();
 
     // Ask for confirmation
     if (!silent && context != null && context.mounted) {
@@ -352,7 +355,7 @@ class PhotoService {
 
         final request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://192.168.1.4:8000/api/photos/uploadAll'),
+          Uri.parse('http://192.168.1.13:8000/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 
@@ -405,6 +408,19 @@ class PhotoService {
             : videoPairs.length;
         final batch = videoPairs.sublist(start, end);
         final success = await uploadBatch(batch, 'videos');
+        if (!success) {
+          allSuccess = false;
+          break;
+        }
+      }
+
+      // Upload PDFs in batches
+      for (int start = 0; start < pdfPairs.length; start += batchSize) {
+        final end = (start + batchSize < pdfPairs.length)
+            ? start + batchSize
+            : pdfPairs.length;
+        final batch = pdfPairs.sublist(start, end);
+        final success = await uploadBatch(batch, 'pdfs'); // type = 'pdfs'
         if (!success) {
           allSuccess = false;
           break;

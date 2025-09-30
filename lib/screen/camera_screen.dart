@@ -105,13 +105,20 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Future<void> _startVideoRecording() async {
     if (!_controller.value.isInitialized || _isRecording) return;
+
     try {
+      // Lock Flutter UI to portrait
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
       ]);
+
+      // Lock camera orientation to portrait
       await _controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
+
+      // Prepare & start recording
       await _controller.prepareForVideoRecording();
       await _controller.startVideoRecording();
+
       setState(() => _isRecording = true);
     } catch (e) {
       debugPrint("Error starting video recording: $e");
@@ -123,16 +130,20 @@ class _CameraScreenState extends State<CameraScreen> {
 
     try {
       final XFile videoFile = await _controller.stopVideoRecording();
-      await _controller.unlockCaptureOrientation();
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+
       setState(() => _isRecording = false);
 
-      // Compress video
+      // Keep orientation locked until user leaves screen
+      // await _controller.unlockCaptureOrientation();  <- DO NOT unlock here
+
+      await _compressAndSaveVideo(videoFile);
+    } catch (e) {
+      debugPrint("Error stopping video recording: $e");
+    }
+  }
+
+  Future<void> _compressAndSaveVideo(XFile videoFile) async {
+    try {
       final MediaInfo? compressedVideo = await VideoCompress.compressVideo(
         videoFile.path,
         quality: VideoQuality.LowQuality,
@@ -149,9 +160,9 @@ class _CameraScreenState extends State<CameraScreen> {
 
       final dir = File(newVideoPath).parent;
       if (!await dir.exists()) await dir.create(recursive: true);
+
       await File(compressedVideo.path!).copy(newVideoPath);
 
-      // Delay briefly
       await Future.delayed(const Duration(milliseconds: 50));
 
       setState(() {
@@ -160,7 +171,7 @@ class _CameraScreenState extends State<CameraScreen> {
         );
       });
     } catch (e) {
-      debugPrint("Error stopping video recording: $e");
+      debugPrint("Error compressing/saving video: $e");
     }
   }
 

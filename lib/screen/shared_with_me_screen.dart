@@ -50,6 +50,7 @@ class SharedWithMeScreen extends StatelessWidget {
                           isShared: true,
                           sharedFolderId: folder['id'],
                           sharedFolderName: folder['name'],
+                          userId: share['shared_by'].toString(),
                         ),
                       ),
                     );

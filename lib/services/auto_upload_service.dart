@@ -69,7 +69,7 @@ class AutoUploadService {
     _isUploading = true;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getInt('user_id')?.toString();
+      final userId = prefs.getString('user_id')?.toString();
       if (userId == null) return;
 
       final root = Directory('/storage/emulated/0/Pictures/MyApp/$userId');

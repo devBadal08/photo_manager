@@ -5,6 +5,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FolderService {
+  Future<String> loadUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('userId') ?? '';
+  }
+
   Future<String> loadUserName() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('user_name') ?? 'Guest';
@@ -49,6 +54,7 @@ class FolderService {
     int subfolderCount = 0;
     int imageCount = 0;
     int videoCount = 0;
+    int pdfCount = 0;
 
     final List<FileSystemEntity> entities = folder.listSync();
 
@@ -61,11 +67,10 @@ class FolderService {
             path.endsWith('.jpeg') ||
             path.endsWith('.png')) {
           imageCount++;
-        } else if (path.endsWith('.mp4') ||
-            path.endsWith('.mov') ||
-            path.endsWith('.mkv') ||
-            path.endsWith('.avi')) {
+        } else if (path.endsWith('.mp4')) {
           videoCount++;
+        } else if (path.endsWith('.pdf')) {
+          pdfCount++;
         }
       }
     }
@@ -74,12 +79,13 @@ class FolderService {
       'subfolders': subfolderCount,
       'images': imageCount,
       'videos': videoCount,
+      'pdfs': pdfCount,
     };
   }
 
   Future<List<Directory>> loadFolders() async {
     final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt('user_id');
+    final userId = prefs.getString('user_id');
     if (userId == null) return [];
 
     final baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
@@ -94,7 +100,7 @@ class FolderService {
 
   Future<bool> createFolder(String folderName) async {
     final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt('user_id')?.toString();
+    final userId = prefs.getString('user_id')?.toString();
     if (userId == null) return false;
 
     final dir = Directory(

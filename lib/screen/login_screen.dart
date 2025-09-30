@@ -36,7 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> login(String email, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('http://192.168.1.4:8000/api/login'),
+        Uri.parse('http://192.168.1.13:8000/api/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );
@@ -44,17 +44,17 @@ class _LoginScreenState extends State<LoginScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final token = data['token'];
-        final userId = data['user']['id'];
+        final userId = data['user']['id'].toString();
         final userName = data['user']['name'];
         final userEmail = data['user']['email'];
         final company = data['user']['company'];
         final rawLogo = company?['company_logo'];
-        final baseUrl = "http://192.168.1.4:8000/storage/";
+        final baseUrl = "http://192.168.1.13:8000/storage/";
         final companyLogo = rawLogo != null ? "$baseUrl$rawLogo" : null;
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('auth_token', token ?? '');
-        await prefs.setInt('user_id', userId);
+        await prefs.setString('user_id', userId);
         await prefs.setString('user_name', userName ?? '');
         await prefs.setString('email', userEmail ?? '');
         await prefs.setString('password', password); // 👈 save password
@@ -66,7 +66,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => FolderScreen()),
+          MaterialPageRoute(builder: (context) => FolderScreen(userId: userId)),
         );
       } else if (response.statusCode == 403) {
         showDialog(

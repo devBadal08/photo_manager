@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' as path;
@@ -31,6 +32,9 @@ class BottomTabs extends StatelessWidget {
     await prefs.setStringList('uploaded_files', uploadedFiles.value.toList());
   }
 
+  final String userId;
+  final String folderName;
+
   BottomTabs({
     super.key,
     this.controller,
@@ -41,6 +45,8 @@ class BottomTabs extends StatelessWidget {
     this.onCameraTap,
     this.onUploadTap,
     this.onUploadComplete,
+    required this.userId,
+    required this.folderName,
   });
 
   bool isImage(String filePath) {
@@ -73,7 +79,7 @@ class BottomTabs extends StatelessWidget {
   Future<void> uploadImagesToServer(BuildContext context) async {
     await BottomTabs.loadUploadedFiles();
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? userId = prefs.getInt('user_id')?.toString();
+    String? userId = prefs.getString('user_id');
     String? token = prefs.getString('auth_token');
 
     if (userId == null || token == null) {
@@ -211,7 +217,7 @@ class BottomTabs extends StatelessWidget {
 
         var request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://192.168.1.4:8000/api/photos/uploadAll'),
+          Uri.parse('http://192.168.1.13:8000/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 
@@ -286,16 +292,18 @@ class BottomTabs extends StatelessWidget {
         controller: tabController,
         onTap: (index) {
           if (index == 1) {
+            // Upload tab
             _resetTab(tabController);
             if (onUploadTap != null) {
-              onUploadTap!(); // call parent callback (PhotoListScreen)
+              onUploadTap!();
             } else {
-              uploadImagesToServer(context); // fallback to default
+              uploadImagesToServer(context);
             }
             return;
           }
 
           if (index == 2) {
+            // Camera tab
             if (cameraDisabled) {
               _resetTab(tabController);
               return;
@@ -307,23 +315,30 @@ class BottomTabs extends StatelessWidget {
             }
           }
 
-          if (index == 3 && onCreateFolder != null) {
+          if (index == 3) {
+            // Scan tab
+            if (scanDisabled) {
+              _resetTab(tabController); // keep user on current tab
+              return; // do nothing
+            }
+
+            _resetTab(tabController);
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    ScanScreen(userId: userId, folderName: folderName),
+              ),
+            );
+            return;
+          }
+
+          if (index == 4 && onCreateFolder != null) {
+            // Create folder tab
             onCreateFolder!(index);
             _resetTab(tabController);
             return;
           }
-
-          // if (index == 4) {
-          //   // Handle Scan tab click
-          //   _resetTab(tabController);
-          //   Navigator.push(
-          //     context,
-          //     MaterialPageRoute(
-          //       builder: (_) => const ScanScreen(), // Your scan screen widget
-          //     ),
-          //   );
-          //   return;
-          // }
 
           controller?.index = index;
         },
@@ -331,21 +346,63 @@ class BottomTabs extends StatelessWidget {
         unselectedLabelColor: colorScheme.onSurface,
         indicatorColor: colorScheme.primary,
         tabs: [
-          const Tab(icon: Icon(Icons.folder), text: 'Folders'),
-          const Tab(icon: Icon(Icons.cloud_upload), text: 'Upload'),
+          const Tab(
+            icon: Icon(Icons.folder),
+            child: const Text(
+              'Folder',
+              style: TextStyle(
+                fontSize: 12, // ✅ set your desired size
+                fontWeight: FontWeight.bold, // optional
+              ),
+            ),
+          ),
+          const Tab(
+            icon: Icon(Icons.cloud_upload),
+            child: const Text(
+              'Upload',
+              style: TextStyle(
+                fontSize: 12, // ✅ set your desired size
+                fontWeight: FontWeight.bold, // optional
+              ),
+            ),
+          ),
           if (showCamera)
             Tab(
               icon: Icon(
                 Icons.camera_alt,
                 color: cameraDisabled ? Colors.grey : null,
               ),
-              text: 'Camera',
+              child: const Text(
+                'Camera',
+                style: TextStyle(
+                  fontSize: 11, // ✅ set your desired size
+                  fontWeight: FontWeight.bold, // optional
+                ),
+              ),
             ),
-          const Tab(icon: Icon(Icons.create_new_folder), text: 'Create'),
-          // const Tab(
-          //   icon: Icon(Icons.document_scanner),
-          //   text: 'Scan',
-          // ),
+          Tab(
+            icon: Icon(
+              Icons.document_scanner,
+              color: scanDisabled ? Colors.grey : null,
+            ),
+            child: const Text(
+              'Scan',
+              style: TextStyle(
+                fontSize: 12, // ✅ set your desired size
+                fontWeight: FontWeight.bold, // optional
+              ),
+            ),
+          ),
+          const Tab(
+            icon: Icon(Icons.create_new_folder),
+            child: const Text(
+              'Create',
+              style: TextStyle(
+                fontSize: 12, // ✅ set your desired size
+                fontWeight: FontWeight.bold, // optional
+              ),
+            ),
+          ),
         ],
       ),
     );

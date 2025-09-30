@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
 import 'package:photomanager_practice/widgets/custom_drawer.dart';
@@ -10,7 +11,8 @@ import 'photo_list_screen.dart';
 import 'package:photomanager_practice/services/folder_service.dart';
 
 class FolderScreen extends StatefulWidget {
-  const FolderScreen({super.key});
+  final String userId;
+  const FolderScreen({super.key, required this.userId});
 
   @override
   State<FolderScreen> createState() => _FolderScreenState();
@@ -31,14 +33,17 @@ class _FolderScreenState extends State<FolderScreen>
   int imageCount = 0;
   int totalImages = 0;
   int videoCount = 0;
+  int pdfCount = 0;
+
   // late final StreamSubscription _statusCheckSub;
+  Directory? selectedFolder;
 
   final FolderService folderService = FolderService();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _loadInitialData();
   }
 
@@ -79,7 +84,8 @@ class _FolderScreenState extends State<FolderScreen>
       folderCount = result['folders'] ?? 0;
       imageCount = result['images'] ?? 0;
       totalImages = imageCount; // keep your old variable if used elsewhere
-      videoCount = result['videos'] ?? 0; // <-- add this in state
+      videoCount = result['videos'] ?? 0;
+      pdfCount = result['pdfs'] ?? 0;
     });
   }
 
@@ -434,6 +440,12 @@ class _FolderScreenState extends State<FolderScreen>
         physics: const NeverScrollableScrollPhysics(),
         children: [
           _buildFolderGrid(),
+          folders.isNotEmpty
+              ? ScanScreen(
+                  userId: widget.userId,
+                  folderName: folders.first.path.split('/').last,
+                )
+              : const Center(child: Text("No folder selected")),
           const SizedBox(),
           const SizedBox(),
           const SizedBox(),
@@ -442,8 +454,13 @@ class _FolderScreenState extends State<FolderScreen>
       bottomNavigationBar: SafeArea(
         child: BottomTabs(
           controller: _tabController,
+          userId: widget.userId, // or actual userId from prefs/auth
+          folderName: selectedFolder != null
+              ? selectedFolder!.path.split('/').last
+              : "",
           showCamera: true,
           cameraDisabled: true,
+          scanDisabled: true,
           onCameraTap: _showCameraDisabledMessage,
           onCreateFolder: (index) {
             _tabController.index = 0;
@@ -505,7 +522,7 @@ class _FolderScreenState extends State<FolderScreen>
 
                 return Text(
                   'Subfolders: $subfolderCount\n'
-                  'Images: $imageCount    Videos: ${snapshot.data?['videos'] ?? 0}',
+                  'Images: $imageCount    Videos: ${snapshot.data?['videos'] ?? 0}    PDFs: ${snapshot.data?['pdfs'] ?? 0}',
                   style: Theme.of(context).textTheme.bodySmall,
                 );
               },
@@ -534,10 +551,17 @@ class _FolderScreenState extends State<FolderScreen>
               ],
             ),
             onTap: () {
+              setState(() {
+                selectedFolder = folder; // ✅ store currently tapped folder
+              });
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => PhotoListScreen(folder: folder),
+                  builder: (_) => PhotoListScreen(
+                    folder: folder,
+                    userId: widget.userId,
+                    selectedFolder: folder,
+                  ),
                 ),
               ).then((_) {
                 _countFoldersAndImages();

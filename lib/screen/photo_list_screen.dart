@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:open_file/open_file.dart';
 import 'package:photomanager_practice/screen/camera_screen.dart';
 import 'package:photomanager_practice/screen/gallery_screen.dart';
+import 'package:photomanager_practice/screen/pdf_viewer_screen.dart';
 import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
@@ -13,6 +15,8 @@ class PhotoListScreen extends StatefulWidget {
   final int? sharedFolderId; // backend folder
   final String? sharedFolderName;
   final bool isShared;
+  final String userId;
+  final Directory? selectedFolder;
 
   const PhotoListScreen({
     super.key,
@@ -20,6 +24,8 @@ class PhotoListScreen extends StatefulWidget {
     this.sharedFolderId,
     this.sharedFolderName,
     this.isShared = false,
+    required this.userId,
+    this.selectedFolder,
   });
 
   @override
@@ -68,7 +74,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   List<dynamic> images = [];
 
   bool isMedia(String filePath) {
-    final mediaExtensions = ['jpg', 'jpeg', 'png', 'mp4'];
+    final mediaExtensions = ['jpg', 'jpeg', 'png', 'mp4', 'pdf'];
     final extension = filePath.split('.').last.toLowerCase();
     return mediaExtensions.contains(extension);
   }
@@ -245,7 +251,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
         if (sub.toLowerCase() != _mainFolderName.toLowerCase()) {
           dirs.add(entity);
         }
-      } else if (entity is File && isMedia(entity.path)) {
+      } else if (entity is File &&
+          (isMedia(entity.path) || isPdf(entity.path))) {
         files.add(entity);
       }
     }
@@ -255,10 +262,15 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
     setState(() {
       folderItems = dirs;
-      imageItems = files; // now contains images + videos
+      imageItems = files; // now contains images + videos + PDFs
       items = [...dirs, ...files];
       filteredFolders = List.from(dirs);
     });
+  }
+
+  // helper function to check for PDFs
+  bool isPdf(String path) {
+    return path.toLowerCase().endsWith('.pdf');
   }
 
   void _filterItems(String query) {
@@ -497,7 +509,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: isSearching
@@ -663,7 +675,14 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           child: Builder(
             builder: (context) => BottomTabs(
               controller: DefaultTabController.of(context),
+              userId: widget.userId, // or actual userId from prefs/auth
+              folderName: widget.selectedFolder != null
+                  ? widget.selectedFolder!.path.split('/').last
+                  : (widget.folder != null
+                        ? widget.folder!.path.split('/').last
+                        : ""),
               showCamera: true,
+              scanDisabled: false,
               onCreateFolder: (int index) {
                 if (index == 3) _showCreateSubFolderDialog();
               },
@@ -799,7 +818,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => PhotoListScreen(folder: folder),
+                  builder: (_) => PhotoListScreen(
+                    folder: folder,
+                    userId: widget.userId,
+                    selectedFolder: widget.selectedFolder,
+                  ),
                 ),
               );
             },
@@ -825,6 +848,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             final file = files[index];
             final isUploaded = uploadedSet.contains(file.path);
             final isSelected = selectedImages.contains(file.path);
+            final extension = file.path.split('.').last.toLowerCase();
 
             return GestureDetector(
               onLongPress: () {
@@ -843,13 +867,24 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     }
                   });
                 } else {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          GalleryScreen(images: files, startIndex: index),
-                    ),
-                  );
+                  if (extension == 'pdf') {
+                    // Open PDF
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PdfViewerScreen(pdfFile: file),
+                      ),
+                    );
+                  } else {
+                    // Open image/video in gallery
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            GalleryScreen(images: files, startIndex: index),
+                      ),
+                    );
+                  }
                 }
               },
               child: Stack(
@@ -857,7 +892,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   Positioned.fill(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: isVideo(file.path)
+                      child: extension == 'mp4'
                           ? Stack(
                               fit: StackFit.expand,
                               children: [
@@ -871,8 +906,19 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                 ),
                               ],
                             )
+                          : extension == 'pdf'
+                          ? Container(
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: Icon(
+                                  Icons.picture_as_pdf,
+                                  size: 40,
+                                  color: Colors.red,
+                                ),
+                              ),
+                            )
                           : Image.file(
-                              file, // forces rebuild
+                              file,
                               fit: BoxFit.cover,
                               cacheWidth: 300,
                               cacheHeight: 300,
@@ -958,7 +1004,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             final isLocal = photo['local'] == true;
             final localPath = photo['path'];
             final serverPath =
-                "http://192.168.1.4:8000/storage/${photo['path']}";
+                "http://192.168.1.13:8000/storage/${photo['path']}";
             final filename = localPath.split('/').last;
             final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
             final isSelected = selectedImages.contains(localPath);
