@@ -139,6 +139,12 @@ class FolderService {
     ).showSnackBar(const SnackBar(content: Text("Camera is disabled")));
   }
 
+  void showScanDisabledMessage(BuildContext context) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text("Scan is disabled")));
+  }
+
   void showLogoutDialog(BuildContext context, VoidCallback onConfirm) {
     showDialog(
       context: context,

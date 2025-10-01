@@ -83,13 +83,14 @@ class AutoUploadService {
                 f.path.endsWith(".jpg") ||
                 f.path.endsWith(".jpeg") ||
                 f.path.endsWith(".png") ||
-                f.path.endsWith(".mp4"),
+                f.path.endsWith(".mp4") ||
+                f.path.endsWith(".pdf"),
           )
           .toList();
 
       for (final file in files) {
         if (!PhotoService.uploadedFiles.value.contains(file.path)) {
-          await PhotoService.uploadImagesToServer(null, silent: true);
+          await PhotoService.uploadImagesToServer(file, silent: true);
           PhotoService.uploadedFiles.value = {
             ...PhotoService.uploadedFiles.value,
             file.path,

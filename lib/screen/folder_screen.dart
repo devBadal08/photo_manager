@@ -197,6 +197,10 @@ class _FolderScreenState extends State<FolderScreen>
     folderService.showCameraDisabledMessage(context);
   }
 
+  void _showScanDisabledMessage() {
+    folderService.showScanDisabledMessage(context);
+  }
+
   Future<void> _renameFolder(Directory folder) async {
     final TextEditingController controller = TextEditingController();
 
@@ -462,6 +466,9 @@ class _FolderScreenState extends State<FolderScreen>
           cameraDisabled: true,
           scanDisabled: true,
           onCameraTap: _showCameraDisabledMessage,
+          onScanTap: () {
+            _showScanDisabledMessage(); // call the async function, but closure itself is not async
+          },
           onCreateFolder: (index) {
             _tabController.index = 0;
             _showCreateFolderDialog(context);

@@ -5,6 +5,7 @@ import 'package:open_file/open_file.dart';
 import 'package:photomanager_practice/screen/camera_screen.dart';
 import 'package:photomanager_practice/screen/gallery_screen.dart';
 import 'package:photomanager_practice/screen/pdf_viewer_screen.dart';
+import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
@@ -210,7 +211,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     );
 
     if (capturedPaths != null && capturedPaths.isNotEmpty) {
-      // ✅ wait a bit to ensure OS finished writing files
       await Future.delayed(const Duration(milliseconds: 500));
 
       if (widget.isShared) {
@@ -221,10 +221,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
         }
         _loadSharedPhotos(widget.sharedFolderId!);
       } else {
-        // For personal folders, add directly to imageItems
         setState(() {
           final newFiles = capturedPaths.map((p) => File(p)).toList();
-          imageItems.addAll(newFiles);
+          imageItems.insertAll(0, newFiles); // insert at top
           items = [...folderItems, ...imageItems];
         });
       }
@@ -233,8 +232,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     // Auto-upload if enabled
     if (AutoUploadService.instance.isEnabled) {
       await AutoUploadService.instance.uploadNow();
-
-      if (!widget.isShared) _loadItems(); // optional: re-scan
+      if (!widget.isShared) _loadItems();
     }
   }
 
@@ -283,6 +281,60 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           )
           .toList();
     });
+  }
+
+  Widget _buildPdfListCards(List<File> pdfFiles) {
+    if (pdfFiles.isEmpty) {
+      return const Center(
+        child: Text("No PDFs yet", style: TextStyle(color: Colors.white70)),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: pdfFiles.length,
+      itemBuilder: (context, index) {
+        final pdfFile = pdfFiles[index];
+        final pdfName = pdfFile.path.split('/').last;
+
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 4,
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 12,
+              horizontal: 16,
+            ),
+            leading: const Icon(
+              Icons.picture_as_pdf,
+              size: 40,
+              color: Colors.redAccent,
+            ),
+            title: Text(
+              pdfName,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.edit_note, color: Colors.blueAccent),
+              onPressed: () => _renamePdf(pdfFile),
+            ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PdfViewerScreen(pdfFile: pdfFile),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _renameFolder(Directory folder) async {
@@ -503,6 +555,94 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     }
   }
 
+  Future<void> _openScanScreen() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ScanScreen(
+          saveFolder: widget.isShared ? null : widget.folder!,
+          sharedFolderId: widget.isShared ? widget.sharedFolderId : null,
+          userId: widget.userId,
+          folderName: widget.folder != null
+              ? widget.folder!.path.split('/').last
+              : '',
+          onPdfCreated: (file) async {
+            final path = file.path;
+
+            if (widget.isShared) {
+              if (!PhotoService.uploadedFiles.value.contains(path)) {
+                setState(() {
+                  _newlyTakenPhotos.add({"path": path, "local": true});
+                });
+              }
+              await _loadSharedPhotos(widget.sharedFolderId!);
+            } else {
+              // Add immediately to imageItems so it appears without reloading folder
+              setState(() {
+                final newFile = File(path);
+                imageItems.insert(0, newFile);
+                items = [...folderItems, ...imageItems];
+              });
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _renamePdf(File pdfFile) async {
+    String currentName = pdfFile.path.split('/').last.replaceAll('.pdf', '');
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController(text: currentName);
+        return AlertDialog(
+          title: const Text('Rename PDF'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(hintText: 'Enter new PDF name'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final input = controller.text.trim();
+                if (input.isNotEmpty) Navigator.pop(context, input);
+              },
+              child: const Text('Rename'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == null) return;
+
+    final newPath = '${pdfFile.parent.path}/$result.pdf';
+    try {
+      final newFile = await pdfFile.rename(newPath);
+
+      // Update the imageItems list so the UI refreshes
+      setState(() {
+        final index = imageItems.indexWhere((f) => f.path == pdfFile.path);
+        if (index != -1) imageItems[index] = newFile;
+        items = [...folderItems, ...imageItems];
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('PDF renamed to $result.pdf')));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to rename PDF: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     //final colorScheme = Theme.of(context).colorScheme;
@@ -604,6 +744,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   label: Text('Images'),
                   icon: Icon(Icons.image),
                 ),
+                ButtonSegment<String>(
+                  value: 'PDF',
+                  label: Text('PDF'),
+                  icon: Icon(Icons.picture_as_pdf),
+                ),
               ],
               selected: {selectedSegment},
               onSelectionChanged: (Set<String> newSelection) {
@@ -612,7 +757,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 });
                 // Animate PageView when segment changes
                 _pageController.animateToPage(
-                  selectedSegment == 'Folders' ? 0 : 1,
+                  selectedSegment == 'Folders'
+                      ? 0
+                      : selectedSegment == 'Images'
+                      ? 1
+                      : 2, // PDF page index
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOut,
                 );
@@ -626,7 +775,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 controller: _pageController,
                 onPageChanged: (index) {
                   setState(() {
-                    selectedSegment = index == 0 ? 'Folders' : 'Images';
+                    selectedSegment = index == 0
+                        ? 'Folders'
+                        : index == 1
+                        ? 'Images'
+                        : 'PDF';
                   });
                 },
                 children: [
@@ -664,7 +817,23 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                   style: textTheme.bodyMedium,
                                 ),
                               )
-                            : _buildImageGrid(imageItems)),
+                            : _buildImageGrid(
+                                imageItems
+                                    .where((f) => !isPdf(f.path))
+                                    .toList(),
+                              )),
+
+                  // --- PDF Page ---
+                  widget.isShared
+                      ? Center(
+                          child: Text(
+                            "PDF view not supported for shared folder",
+                            style: textTheme.bodyMedium,
+                          ),
+                        )
+                      : _buildPdfListCards(
+                          imageItems.where((f) => isPdf(f.path)).toList(),
+                        ),
                 ],
               ),
             ),
@@ -687,6 +856,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 if (index == 3) _showCreateSubFolderDialog();
               },
               onCameraTap: _takePhoto,
+              onScanTap: () {
+                _openScanScreen(); // call the async function, but closure itself is not async
+              },
               onUploadTap: () async {
                 if (widget.isShared && widget.sharedFolderId != null) {
                   // 🔄 Upload shared folder photos
@@ -737,7 +909,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   }
                 } else {
                   // 🔄 Upload personal photos
-                  await PhotoService.uploadImagesToServer(context);
+                  await PhotoService.uploadImagesToServer(
+                    null,
+                    context: context,
+                  );
                   _loadItems();
                 }
               },
@@ -960,6 +1135,27 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                           Icons.check,
                           color: Colors.white,
                           size: 18,
+                        ),
+                      ),
+                    ),
+                  // PDF rename button
+                  if (extension == 'pdf')
+                    Positioned(
+                      right: 6,
+                      bottom: 6,
+                      child: GestureDetector(
+                        onTap: () => _renamePdf(file),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.blueAccent,
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(4),
+                          child: const Icon(
+                            Icons.edit_note,
+                            color: Colors.white,
+                            size: 18,
+                          ),
                         ),
                       ),
                     ),

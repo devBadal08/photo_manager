@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:photomanager_practice/screen/scan_screen.dart';
+import 'package:photomanager_practice/services/photo_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' as path;
@@ -47,6 +48,7 @@ class BottomTabs extends StatelessWidget {
     this.onUploadComplete,
     required this.userId,
     required this.folderName,
+    required Null Function() onScanTap,
   });
 
   bool isImage(String filePath) {
@@ -76,210 +78,210 @@ class BottomTabs extends StatelessWidget {
     return File(compressedXFile.path);
   }
 
-  Future<void> uploadImagesToServer(BuildContext context) async {
-    await BottomTabs.loadUploadedFiles();
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? userId = prefs.getString('user_id');
-    String? token = prefs.getString('auth_token');
+  // Future<void> uploadImagesToServer(BuildContext context) async {
+  //   await BottomTabs.loadUploadedFiles();
+  //   SharedPreferences prefs = await SharedPreferences.getInstance();
+  //   String? userId = prefs.getString('user_id');
+  //   String? token = prefs.getString('auth_token');
 
-    if (userId == null || token == null) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("User not logged in")));
-      return;
-    }
+  //   if (userId == null || token == null) {
+  //     if (!context.mounted) return;
+  //     ScaffoldMessenger.of(
+  //       context,
+  //     ).showSnackBar(const SnackBar(content: Text("User not logged in")));
+  //     return;
+  //   }
 
-    Directory baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
-    if (!await baseDir.exists()) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("No folders found to upload")),
-      );
-      return;
-    }
+  //   Directory baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
+  //   if (!await baseDir.exists()) {
+  //     if (!context.mounted) return;
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       const SnackBar(content: Text("No folders found to upload")),
+  //     );
+  //     return;
+  //   }
 
-    List<File> imageFiles = [];
-    List<String> folderNames = [];
+  //   List<File> imageFiles = [];
+  //   List<String> folderNames = [];
 
-    for (var entity in baseDir.listSync(recursive: true)) {
-      if (entity is File && isImage(entity.path)) {
-        imageFiles.add(entity);
-        String relativePath = entity.parent.path.replaceFirst(
-          baseDir.path + '/',
-          '',
-        );
-        folderNames.add(relativePath);
-      }
-    }
+  //   for (var entity in baseDir.listSync(recursive: true)) {
+  //     if (entity is File && isImage(entity.path)) {
+  //       imageFiles.add(entity);
+  //       String relativePath = entity.parent.path.replaceFirst(
+  //         baseDir.path + '/',
+  //         '',
+  //       );
+  //       folderNames.add(relativePath);
+  //     }
+  //   }
 
-    if (imageFiles.isEmpty) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("No images found")));
-      return;
-    }
+  //   if (imageFiles.isEmpty) {
+  //     if (!context.mounted) return;
+  //     ScaffoldMessenger.of(
+  //       context,
+  //     ).showSnackBar(const SnackBar(content: Text("No images found")));
+  //     return;
+  //   }
 
-    // Pair files with their folders
-    List<MapEntry<File, String>> fileFolderPairs = [];
+  //   // Pair files with their folders
+  //   List<MapEntry<File, String>> fileFolderPairs = [];
 
-    for (int i = 0; i < imageFiles.length; i++) {
-      fileFolderPairs.add(MapEntry(imageFiles[i], folderNames[i]));
-    }
+  //   for (int i = 0; i < imageFiles.length; i++) {
+  //     fileFolderPairs.add(MapEntry(imageFiles[i], folderNames[i]));
+  //   }
 
-    // Filter only not uploaded ones
-    var notUploadedPairs = fileFolderPairs
-        .where(
-          (entry) => !BottomTabs.uploadedFiles.value.contains(
-            File(entry.key.path).absolute.path,
-          ),
-        )
-        .toList();
+  //   // Filter only not uploaded ones
+  //   var notUploadedPairs = fileFolderPairs
+  //       .where(
+  //         (entry) => !BottomTabs.uploadedFiles.value.contains(
+  //           File(entry.key.path).absolute.path,
+  //         ),
+  //       )
+  //       .toList();
 
-    List<File> notUploadedFiles = notUploadedPairs.map((e) => e.key).toList();
-    List<String> notUploadedFolders = notUploadedPairs
-        .map((e) => e.value)
-        .toList();
+  //   List<File> notUploadedFiles = notUploadedPairs.map((e) => e.key).toList();
+  //   List<String> notUploadedFolders = notUploadedPairs
+  //       .map((e) => e.value)
+  //       .toList();
 
-    if (notUploadedFiles.isEmpty) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("No new images to upload")));
-      return;
-    }
+  //   if (notUploadedFiles.isEmpty) {
+  //     if (!context.mounted) return;
+  //     ScaffoldMessenger.of(
+  //       context,
+  //     ).showSnackBar(const SnackBar(content: Text("No new images to upload")));
+  //     return;
+  //   }
 
-    ValueNotifier<int> uploadedCount = ValueNotifier<int>(0);
-    int totalImages = notUploadedFiles.length;
-    int remainingImages = notUploadedFiles.length; // Pending images
+  //   ValueNotifier<int> uploadedCount = ValueNotifier<int>(0);
+  //   int totalImages = notUploadedFiles.length;
+  //   int remainingImages = notUploadedFiles.length; // Pending images
 
-    if (!context.mounted) return;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Upload Confirmation"),
-        content: Text(
-          "Do you want to upload $remainingImages images to the server?",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("No"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Yes"),
-          ),
-        ],
-      ),
-    );
+  //   if (!context.mounted) return;
+  //   final confirm = await showDialog<bool>(
+  //     context: context,
+  //     builder: (context) => AlertDialog(
+  //       title: const Text("Upload Confirmation"),
+  //       content: Text(
+  //         "Do you want to upload $remainingImages images to the server?",
+  //       ),
+  //       actions: [
+  //         TextButton(
+  //           onPressed: () => Navigator.pop(context, false),
+  //           child: const Text("No"),
+  //         ),
+  //         TextButton(
+  //           onPressed: () => Navigator.pop(context, true),
+  //           child: const Text("Yes"),
+  //         ),
+  //       ],
+  //     ),
+  //   );
 
-    if (confirm != true) return;
+  //   if (confirm != true) return;
 
-    if (!context.mounted) return;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) {
-        return AlertDialog(
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          content: ValueListenableBuilder<int>(
-            valueListenable: uploadedCount,
-            builder: (_, count, __) {
-              //final remaining = totalImages - count;
-              return Row(
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(width: 20),
-                  Expanded(
-                    child: Text(
-                      "${((count / totalImages) * 100).toStringAsFixed(0)}% uploading images",
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
-    );
+  //   if (!context.mounted) return;
+  //   showDialog(
+  //     context: context,
+  //     barrierDismissible: false,
+  //     builder: (_) {
+  //       return AlertDialog(
+  //         backgroundColor: Theme.of(context).colorScheme.surface,
+  //         content: ValueListenableBuilder<int>(
+  //           valueListenable: uploadedCount,
+  //           builder: (_, count, __) {
+  //             //final remaining = totalImages - count;
+  //             return Row(
+  //               children: [
+  //                 const CircularProgressIndicator(),
+  //                 const SizedBox(width: 20),
+  //                 Expanded(
+  //                   child: Text(
+  //                     "${((count / totalImages) * 100).toStringAsFixed(0)}% uploading images",
+  //                     style: Theme.of(context).textTheme.bodyMedium,
+  //                   ),
+  //                 ),
+  //               ],
+  //             );
+  //           },
+  //         ),
+  //       );
+  //     },
+  //   );
 
-    try {
-      const batchSize = 10;
-      bool allSuccess = true;
+  //   try {
+  //     const batchSize = 10;
+  //     bool allSuccess = true;
 
-      for (int start = 0; start < notUploadedFiles.length; start += batchSize) {
-        final end = (start + batchSize < notUploadedFiles.length)
-            ? start + batchSize
-            : notUploadedFiles.length;
+  //     for (int start = 0; start < notUploadedFiles.length; start += batchSize) {
+  //       final end = (start + batchSize < notUploadedFiles.length)
+  //           ? start + batchSize
+  //           : notUploadedFiles.length;
 
-        var request = http.MultipartRequest(
-          'POST',
-          Uri.parse('http://192.168.1.13:8000/api/photos/uploadAll'),
-        );
-        request.headers['Authorization'] = 'Bearer $token';
+  //       var request = http.MultipartRequest(
+  //         'POST',
+  //         Uri.parse('http://192.168.1.13:8000/api/photos/uploadAll'),
+  //       );
+  //       request.headers['Authorization'] = 'Bearer $token';
 
-        for (int i = start; i < end; i++) {
-          request.fields['folders[${i - start}]'] = notUploadedFolders[i];
-          File compressed = await compressImage(notUploadedFiles[i]);
+  //       for (int i = start; i < end; i++) {
+  //         request.fields['folders[${i - start}]'] = notUploadedFolders[i];
+  //         File compressed = await compressImage(notUploadedFiles[i]);
 
-          final length = await compressed.length();
-          final stream = http.ByteStream(compressed.openRead());
+  //         final length = await compressed.length();
+  //         final stream = http.ByteStream(compressed.openRead());
 
-          request.files.add(
-            http.MultipartFile(
-              'images[${i - start}]',
-              stream,
-              length,
-              filename: compressed.path.split('/').last,
-            ),
-          );
-        }
+  //         request.files.add(
+  //           http.MultipartFile(
+  //             'images[${i - start}]',
+  //             stream,
+  //             length,
+  //             filename: compressed.path.split('/').last,
+  //           ),
+  //         );
+  //       }
 
-        var response = await request.send();
+  //       var response = await request.send();
 
-        if (response.statusCode == 200) {
-          for (int i = start; i < end; i++) {
-            BottomTabs.uploadedFiles.value.add(
-              File(notUploadedFiles[i].path).absolute.path,
-            ); // ✅ use notUploadedFiles
-          }
-          BottomTabs.uploadedFiles.notifyListeners();
-          await BottomTabs.saveUploadedFiles();
-          uploadedCount.value += (end - start);
-        } else {
-          allSuccess = false;
-          String err = await response.stream.bytesToString();
-          debugPrint("Batch upload failed: $err");
-          break;
-        }
-      }
+  //       if (response.statusCode == 200) {
+  //         for (int i = start; i < end; i++) {
+  //           BottomTabs.uploadedFiles.value.add(
+  //             File(notUploadedFiles[i].path).absolute.path,
+  //           ); // ✅ use notUploadedFiles
+  //         }
+  //         BottomTabs.uploadedFiles.notifyListeners();
+  //         await BottomTabs.saveUploadedFiles();
+  //         uploadedCount.value += (end - start);
+  //       } else {
+  //         allSuccess = false;
+  //         String err = await response.stream.bytesToString();
+  //         debugPrint("Batch upload failed: $err");
+  //         break;
+  //       }
+  //     }
 
-      if (!context.mounted) return;
-      Navigator.pop(context); // Close loader
+  //     if (!context.mounted) return;
+  //     Navigator.pop(context); // Close loader
 
-      if (!context.mounted) return;
-      if (allSuccess) {
-        if (onUploadComplete != null) onUploadComplete!();
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Uploaded successfully")));
-      } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Some uploads failed")));
-      }
-    } catch (e) {
-      if (!context.mounted) return;
-      Navigator.pop(context);
-      debugPrint("❌ Upload error: $e");
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Upload failed")));
-    }
-  }
+  //     if (!context.mounted) return;
+  //     if (allSuccess) {
+  //       if (onUploadComplete != null) onUploadComplete!();
+  //       ScaffoldMessenger.of(
+  //         context,
+  //       ).showSnackBar(const SnackBar(content: Text("Uploaded successfully")));
+  //     } else {
+  //       ScaffoldMessenger.of(
+  //         context,
+  //       ).showSnackBar(const SnackBar(content: Text("Some uploads failed")));
+  //     }
+  //   } catch (e) {
+  //     if (!context.mounted) return;
+  //     Navigator.pop(context);
+  //     debugPrint("❌ Upload error: $e");
+  //     ScaffoldMessenger.of(
+  //       context,
+  //     ).showSnackBar(const SnackBar(content: Text("Upload failed")));
+  //   }
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -290,32 +292,19 @@ class BottomTabs extends StatelessWidget {
       color: colorScheme.surface,
       child: TabBar(
         controller: tabController,
-        onTap: (index) {
+        onTap: (index) async {
           if (index == 1) {
             // Upload tab
             _resetTab(tabController);
             if (onUploadTap != null) {
               onUploadTap!();
             } else {
-              uploadImagesToServer(context);
+              await PhotoService.uploadImagesToServer(null, context: context);
             }
             return;
           }
 
           if (index == 2) {
-            // Camera tab
-            if (cameraDisabled) {
-              _resetTab(tabController);
-              return;
-            }
-            if (showCamera && onCameraTap != null) {
-              onCameraTap!();
-              _resetTab(tabController);
-              return;
-            }
-          }
-
-          if (index == 3) {
             // Scan tab
             if (scanDisabled) {
               _resetTab(tabController); // keep user on current tab
@@ -331,6 +320,19 @@ class BottomTabs extends StatelessWidget {
               ),
             );
             return;
+          }
+
+          if (index == 3) {
+            // Camera tab
+            if (cameraDisabled) {
+              _resetTab(tabController);
+              return;
+            }
+            if (showCamera && onCameraTap != null) {
+              onCameraTap!();
+              _resetTab(tabController);
+              return;
+            }
           }
 
           if (index == 4 && onCreateFolder != null) {
@@ -369,26 +371,26 @@ class BottomTabs extends StatelessWidget {
           if (showCamera)
             Tab(
               icon: Icon(
-                Icons.camera_alt,
-                color: cameraDisabled ? Colors.grey : null,
+                Icons.document_scanner,
+                color: scanDisabled ? Colors.grey : null,
               ),
               child: const Text(
-                'Camera',
+                'Scan',
                 style: TextStyle(
-                  fontSize: 11, // ✅ set your desired size
+                  fontSize: 12, // ✅ set your desired size
                   fontWeight: FontWeight.bold, // optional
                 ),
               ),
             ),
           Tab(
             icon: Icon(
-              Icons.document_scanner,
-              color: scanDisabled ? Colors.grey : null,
+              Icons.camera_alt,
+              color: cameraDisabled ? Colors.grey : null,
             ),
             child: const Text(
-              'Scan',
+              'Camera',
               style: TextStyle(
-                fontSize: 12, // ✅ set your desired size
+                fontSize: 11, // ✅ set your desired size
                 fontWeight: FontWeight.bold, // optional
               ),
             ),

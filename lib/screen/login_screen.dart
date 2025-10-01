@@ -57,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setString('user_id', userId);
         await prefs.setString('user_name', userName ?? '');
         await prefs.setString('email', userEmail ?? '');
-        await prefs.setString('password', password); // 👈 save password
+        await prefs.setString('password', password); // save password
         if (companyLogo != null) {
           prefs.setString('company_logo', companyLogo);
         } else {

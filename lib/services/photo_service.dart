@@ -208,7 +208,8 @@ class PhotoService {
   }
 
   static Future<void> uploadImagesToServer(
-    BuildContext? context, {
+    File? file, {
+    BuildContext? context,
     bool silent = false,
   }) async {
     await PhotoService.loadUploadedFiles();

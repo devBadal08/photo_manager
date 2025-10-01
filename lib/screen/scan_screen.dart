@@ -8,6 +8,7 @@ import 'package:cunning_document_scanner/ios_options.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class ScanScreen extends StatefulWidget {
+  final Directory? saveFolder;
   final String userId; // required
   final String folderName; // required
   final int? sharedFolderId; // optional for shared folders
@@ -16,6 +17,7 @@ class ScanScreen extends StatefulWidget {
 
   const ScanScreen({
     Key? key,
+    this.saveFolder,
     required this.userId,
     required this.folderName,
     this.sharedFolderId,
@@ -54,14 +56,22 @@ class _ScanScreenState extends State<ScanScreen> {
       }
 
       final images = imagePaths.map((path) => File(path)).toList();
+      if (!mounted) return;
       setState(() {
         scannedImages = images;
         isScanning = false;
       });
 
-      await _convertImagesToPdf(images);
+      // Convert images to PDF and return the file path immediately
+      final pdf = await _convertImagesToPdf(images);
+
+      if (pdf != null) {
+        widget.onPdfCreated?.call(pdf); // send PDF back
+        //Navigator.of(context).pop([pdf.path]); // return list of paths
+      }
     } catch (e) {
       debugPrint("Scan error: $e");
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Failed to scan document")));
@@ -69,25 +79,18 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  Future<void> _convertImagesToPdf(List<File> images) async {
+  Future<File?> _convertImagesToPdf(List<File> images) async {
     try {
       // 1️⃣ Handle permissions
       if (Platform.isAndroid) {
-        // request storage first (works on API <= 29)
         final storageStatus = await Permission.storage.request();
         if (!storageStatus.isGranted) {
-          // on Android 11+ user may need MANAGE_EXTERNAL_STORAGE
           final manageStatus = await Permission.manageExternalStorage.request();
-          if (!manageStatus.isGranted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Storage permission denied")),
-            );
-            return;
-          }
+          if (!manageStatus.isGranted) return null;
         }
       }
 
-      // 2️⃣ Build folder path: /Pictures/MyApp/<userId>/<folderName>
+      // 2️⃣ Build folder path
       final Directory baseDir = widget.sharedFolderId != null
           ? Directory(
               '/storage/emulated/0/Pictures/MyApp/Shared/${widget.sharedFolderId}',
@@ -96,12 +99,9 @@ class _ScanScreenState extends State<ScanScreen> {
               '/storage/emulated/0/Pictures/MyApp/${widget.userId}/${widget.folderName}',
             );
 
-      // 3️⃣ Ensure folder exists
-      if (!await baseDir.exists()) {
-        await baseDir.create(recursive: true);
-      }
+      if (!await baseDir.exists()) await baseDir.create(recursive: true);
 
-      // 4️⃣ Create PDF
+      // 3️⃣ Create PDF
       final pdf = pw.Document();
       for (final imgFile in images) {
         final image = pw.MemoryImage(await imgFile.readAsBytes());
@@ -114,26 +114,26 @@ class _ScanScreenState extends State<ScanScreen> {
         );
       }
 
-      // 5️⃣ Save with timestamp inside selected folder
+      // 4️⃣ Save PDF
       final pdfPath =
           '${baseDir.path}/scanned_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final file = File(pdfPath);
       await file.writeAsBytes(await pdf.save());
+      if (!mounted) ;
 
       setState(() => pdfFile = file);
-
-      if (widget.onPdfCreated != null) {
-        widget.onPdfCreated!(file);
-      }
-
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("PDF saved at: $pdfPath")));
+
+      return file;
     } catch (e, st) {
       debugPrint("PDF conversion error: $e\n$st");
+      if (!mounted) return null;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Failed to save as PDF")));
+      return null;
     }
   }
 
@@ -141,38 +141,107 @@ class _ScanScreenState extends State<ScanScreen> {
     if (pdfFile != null) OpenFile.open(pdfFile!.path);
   }
 
+  Future<void> _renamePdf() async {
+    if (pdfFile == null) return;
+
+    final currentPdf = pdfFile!;
+    String currentName = currentPdf.path.split('/').last.replaceAll('.pdf', '');
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController(text: currentName);
+        return AlertDialog(
+          title: const Text('Rename PDF'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(hintText: 'Enter new PDF name'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final input = controller.text.trim();
+                if (input.isNotEmpty) Navigator.pop(context, input);
+              },
+              child: const Text('Rename'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == null) return; // user cancelled
+
+    final newPath = '${currentPdf.parent.path}/$result.pdf';
+    final newFile = await currentPdf.rename(newPath);
+
+    setState(() => pdfFile = newFile);
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('PDF renamed to $result.pdf')));
+
+    // Call the callback with the updated file
+    widget.onPdfCreated?.call(newFile);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: const Text("Scan Document"),
-        backgroundColor: theme.appBarTheme.backgroundColor,
-        foregroundColor: theme.appBarTheme.foregroundColor,
-        actions: [
-          if (pdfFile != null)
-            IconButton(
-              icon: const Icon(Icons.picture_as_pdf),
-              onPressed: _openPdf,
-            ),
-        ],
+    return WillPopScope(
+      onWillPop: () async {
+        // If a PDF was created, send it back before popping
+        if (pdfFile != null) {
+          widget.onPdfCreated?.call(pdfFile!);
+          Navigator.of(context).pop(pdfFile); // return file to caller
+          return false; // prevent double pop
+        }
+        return true;
+      },
+      child: Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        appBar: AppBar(
+          title: const Text("Scan Document"),
+          backgroundColor: theme.appBarTheme.backgroundColor,
+          foregroundColor: theme.appBarTheme.foregroundColor,
+          actions: [
+            if (pdfFile != null) ...[
+              IconButton(
+                icon: const Icon(Icons.picture_as_pdf),
+                onPressed: _openPdf,
+                tooltip: 'Open PDF',
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit_note),
+                onPressed: _renamePdf,
+                tooltip: 'Rename PDF',
+              ),
+            ],
+          ],
+        ),
+        body: isScanning
+            ? const Center(child: CircularProgressIndicator())
+            : scannedImages.isNotEmpty
+            ? ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: scannedImages.length,
+                itemBuilder: (context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    child: Image.file(
+                      scannedImages[index],
+                      fit: BoxFit.contain,
+                    ),
+                  );
+                },
+              )
+            : const Center(child: Text("No document scanned")),
       ),
-      body: isScanning
-          ? const Center(child: CircularProgressIndicator())
-          : scannedImages.isNotEmpty
-          ? ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: scannedImages.length,
-              itemBuilder: (context, index) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: Image.file(scannedImages[index], fit: BoxFit.contain),
-                );
-              },
-            )
-          : const Center(child: Text("No document scanned")),
     );
   }
 }

@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
+import 'dart:math';
+import 'package:sensors_plus/sensors_plus.dart';
 
 enum MediaType { image, video }
 
@@ -41,12 +43,28 @@ class _CameraScreenState extends State<CameraScreen> {
   FlashMode _flashMode = FlashMode.off;
   double _currentZoom = 1.0;
   double _baseZoom = 1.0;
+  double _deviceRotation = 0;
 
   @override
   void initState() {
     super.initState();
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     initCamera();
+
+    accelerometerEvents.listen((event) {
+      double angle = atan2(event.y, event.x) * (180 / pi);
+
+      // Normalize to 0, 90, 180, 270
+      if (angle >= -45 && angle < 45) {
+        _deviceRotation = 0; // Portrait Up
+      } else if (angle >= 45 && angle < 135) {
+        _deviceRotation = 270; // Landscape Left
+      } else if (angle >= -135 && angle < -45) {
+        _deviceRotation = 90; // Landscape Right
+      } else {
+        _deviceRotation = 180; // Portrait Down
+      }
+    });
   }
 
   Future<void> initCamera() async {
@@ -130,12 +148,9 @@ class _CameraScreenState extends State<CameraScreen> {
 
     try {
       final XFile videoFile = await _controller.stopVideoRecording();
-
       setState(() => _isRecording = false);
 
-      // Keep orientation locked until user leaves screen
-      // await _controller.unlockCaptureOrientation();  <- DO NOT unlock here
-
+      // Compress and rotate video according to device orientation
       await _compressAndSaveVideo(videoFile);
     } catch (e) {
       debugPrint("Error stopping video recording: $e");
@@ -150,6 +165,7 @@ class _CameraScreenState extends State<CameraScreen> {
         deleteOrigin: false,
         includeAudio: true,
         frameRate: 24,
+        //rotate: _deviceRotation.toInt(), // <- automatic rotation
       );
 
       if (compressedVideo == null) return;
@@ -162,7 +178,6 @@ class _CameraScreenState extends State<CameraScreen> {
       if (!await dir.exists()) await dir.create(recursive: true);
 
       await File(compressedVideo.path!).copy(newVideoPath);
-
       await Future.delayed(const Duration(milliseconds: 50));
 
       setState(() {

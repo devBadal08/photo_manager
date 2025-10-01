@@ -27,7 +27,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
   @override
   void initState() {
     super.initState();
-    images = List<File>.from(widget.images);
+    images = widget.images.where((file) {
+      final ext = file.path.toLowerCase().split('.').last;
+      return ["jpg", "jpeg", "png", "mp4"].contains(ext);
+    }).toList();
   }
 
   @override
