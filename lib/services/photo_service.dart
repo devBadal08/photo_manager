@@ -25,7 +25,7 @@ class PhotoService {
   }
 
   bool isImageExtension(String filePath) {
-    final imageExtensions = ['jpg', 'jpeg', 'png', 'pdf', 'docx'];
+    final imageExtensions = ['jpg', 'jpeg', 'png', 'pdf'];
     final extension = filePath.split('.').last.toLowerCase();
     return imageExtensions.contains(extension);
   }
@@ -102,7 +102,7 @@ class PhotoService {
   }
 
   bool isImage(String filePath) {
-    final imageExtensions = ['jpg', 'jpeg', 'png', 'pdf', 'docx'];
+    final imageExtensions = ['jpg', 'jpeg', 'png', 'pdf'];
     final extension = filePath.split('.').last.toLowerCase();
     return imageExtensions.contains(extension);
   }
@@ -118,7 +118,7 @@ class PhotoService {
         await FlutterImageCompress.compressAndGetFile(
           file.absolute.path,
           targetPath,
-          quality: 60,
+          quality: 70,
         );
 
     if (compressedXFile == null) {

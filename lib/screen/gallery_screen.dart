@@ -59,13 +59,16 @@ class _GalleryScreenState extends State<GalleryScreen> {
                   ),
                 );
               } else {
+                final imageFilesOnly = images
+                    .where((f) => !isVideo(f))
+                    .toList();
                 // 👉 Open image editor for photos
                 final editedResult =
                     await Navigator.push<Map<String, dynamic>?>(
                       context,
                       MaterialPageRoute(
                         builder: (_) => ImageEditorScreen(
-                          images: images,
+                          images: imageFilesOnly,
                           initialIndex: index,
                         ),
                       ),

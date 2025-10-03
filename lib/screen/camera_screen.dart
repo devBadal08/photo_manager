@@ -1,12 +1,10 @@
 import 'dart:io';
-import 'package:camera/camera.dart' hide ImageFormat;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:photomanager_practice/services/photo_service.dart';
-import 'package:video_compress/video_compress.dart';
+import 'package:camera/camera.dart' hide ImageFormat;
 import 'package:video_player/video_player.dart';
-import 'dart:math';
-import 'package:sensors_plus/sensors_plus.dart';
+import 'package:video_compress/video_compress.dart';
+import 'package:photomanager_practice/services/photo_service.dart';
 
 enum MediaType { image, video }
 
@@ -43,28 +41,12 @@ class _CameraScreenState extends State<CameraScreen> {
   FlashMode _flashMode = FlashMode.off;
   double _currentZoom = 1.0;
   double _baseZoom = 1.0;
-  double _deviceRotation = 0;
 
   @override
   void initState() {
     super.initState();
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     initCamera();
-
-    accelerometerEvents.listen((event) {
-      double angle = atan2(event.y, event.x) * (180 / pi);
-
-      // Normalize to 0, 90, 180, 270
-      if (angle >= -45 && angle < 45) {
-        _deviceRotation = 0; // Portrait Up
-      } else if (angle >= 45 && angle < 135) {
-        _deviceRotation = 270; // Landscape Left
-      } else if (angle >= -135 && angle < -45) {
-        _deviceRotation = 90; // Landscape Right
-      } else {
-        _deviceRotation = 180; // Portrait Down
-      }
-    });
   }
 
   Future<void> initCamera() async {
@@ -73,12 +55,11 @@ class _CameraScreenState extends State<CameraScreen> {
 
     _controller = CameraController(
       cameras[_currentCameraIndex],
-      ResolutionPreset.max,
+      ResolutionPreset.ultraHigh,
       enableAudio: true,
     );
 
     await _controller.initialize();
-    await _controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
 
     if (!mounted) return;
     setState(() => _isCameraInitialized = true);
@@ -105,14 +86,12 @@ class _CameraScreenState extends State<CameraScreen> {
       final dir = File(newPath).parent;
       if (!await dir.exists()) await dir.create(recursive: true);
       await compressedFile.copy(newPath);
+      //await File(image.path).copy(newPath);
 
-      // Delay briefly to ensure file is ready
-      await Future.delayed(const Duration(milliseconds: 50));
+      final mediaFile = MediaFile(file: File(newPath), type: MediaType.image);
 
       setState(() {
-        capturedMedia.add(
-          MediaFile(file: File(newPath), type: MediaType.image),
-        );
+        capturedMedia.add(mediaFile);
       });
     } catch (e) {
       debugPrint("Error capturing photo: $e");
@@ -125,18 +104,8 @@ class _CameraScreenState extends State<CameraScreen> {
     if (!_controller.value.isInitialized || _isRecording) return;
 
     try {
-      // Lock Flutter UI to portrait
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-      ]);
-
-      // Lock camera orientation to portrait
-      await _controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
-
-      // Prepare & start recording
       await _controller.prepareForVideoRecording();
       await _controller.startVideoRecording();
-
       setState(() => _isRecording = true);
     } catch (e) {
       debugPrint("Error starting video recording: $e");
@@ -149,26 +118,23 @@ class _CameraScreenState extends State<CameraScreen> {
     try {
       final XFile videoFile = await _controller.stopVideoRecording();
       setState(() => _isRecording = false);
-
-      // Compress and rotate video according to device orientation
       await _compressAndSaveVideo(videoFile);
     } catch (e) {
       debugPrint("Error stopping video recording: $e");
     }
   }
 
-  Future<void> _compressAndSaveVideo(XFile videoFile) async {
+  Future<File?> _compressAndSaveVideo(XFile videoFile) async {
     try {
       final MediaInfo? compressedVideo = await VideoCompress.compressVideo(
         videoFile.path,
-        quality: VideoQuality.LowQuality,
+        quality: VideoQuality.MediumQuality,
         deleteOrigin: false,
         includeAudio: true,
-        frameRate: 24,
-        //rotate: _deviceRotation.toInt(), // <- automatic rotation
+        frameRate: 60,
       );
 
-      if (compressedVideo == null) return;
+      if (compressedVideo == null) return null;
 
       final String newVideoPath = widget.saveFolder != null
           ? '${widget.saveFolder!.path}/${DateTime.now().millisecondsSinceEpoch}.mp4'
@@ -177,16 +143,16 @@ class _CameraScreenState extends State<CameraScreen> {
       final dir = File(newVideoPath).parent;
       if (!await dir.exists()) await dir.create(recursive: true);
 
-      await File(compressedVideo.path!).copy(newVideoPath);
-      await Future.delayed(const Duration(milliseconds: 50));
+      final savedFile = await File(compressedVideo.path!).copy(newVideoPath);
 
       setState(() {
-        capturedMedia.add(
-          MediaFile(file: File(newVideoPath), type: MediaType.video),
-        );
+        capturedMedia.add(MediaFile(file: savedFile, type: MediaType.video));
       });
+
+      return savedFile;
     } catch (e) {
       debugPrint("Error compressing/saving video: $e");
+      return null;
     }
   }
 
@@ -210,7 +176,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
   void _returnCapturedMedia() {
     final paths = capturedMedia.map((m) => m.file.path).toList();
-    Navigator.pop(context, paths); // returns captured paths to folder grid
+    Navigator.pop(context, paths); // returns captured paths
   }
 
   @override
@@ -221,43 +187,31 @@ class _CameraScreenState extends State<CameraScreen> {
 
     return WillPopScope(
       onWillPop: () async {
-        // This is called when user presses the back button
         _returnCapturedMedia();
-        return true; // allow pop
+        return true;
       },
       child: Scaffold(
         body: Stack(
           children: [
             Positioned.fill(
               child: GestureDetector(
-                onScaleStart: (details) {
-                  _baseZoom = _currentZoom;
-                },
+                onScaleStart: (details) => _baseZoom = _currentZoom,
                 onScaleUpdate: (details) async {
-                  if (_controller.value.isInitialized) {
-                    final maxZoom = await _controller.getMaxZoomLevel();
-                    final minZoom = await _controller.getMinZoomLevel();
-
-                    double newZoom = (_baseZoom * details.scale).clamp(
-                      minZoom,
-                      maxZoom,
-                    );
-
-                    await _controller.setZoomLevel(newZoom);
-                    setState(() => _currentZoom = newZoom);
-                  }
+                  final maxZoom = await _controller.getMaxZoomLevel();
+                  final minZoom = await _controller.getMinZoomLevel();
+                  double newZoom = (_baseZoom * details.scale).clamp(
+                    minZoom,
+                    maxZoom,
+                  );
+                  await _controller.setZoomLevel(newZoom);
+                  setState(() => _currentZoom = newZoom);
                 },
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: _controller.value.previewSize!.height,
-                    height: _controller.value.previewSize!.width,
-                    child: CameraPreview(_controller),
-                  ),
+                child: AspectRatio(
+                  aspectRatio: _controller.value.aspectRatio,
+                  child: CameraPreview(_controller),
                 ),
               ),
             ),
-
             Positioned(
               top: 0,
               left: 0,
@@ -433,9 +387,7 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 }
 
-// FullScreenMediaView remains the same as your previous code
-
-// ==================== FullScreenMediaView ====================
+// ================= FullScreenMediaView =================
 class FullScreenMediaView extends StatefulWidget {
   final List<MediaFile> media;
   final int initialIndex;
@@ -454,8 +406,6 @@ class _FullScreenMediaViewState extends State<FullScreenMediaView> {
   late PageController _pageController;
   late int _currentIndex;
   VideoPlayerController? _videoController;
-
-  // Zoom related
   double _currentScale = 1.0;
   double _baseScale = 1.0;
 
@@ -501,14 +451,13 @@ class _FullScreenMediaViewState extends State<FullScreenMediaView> {
         onPageChanged: (index) {
           setState(() {
             _currentIndex = index;
-            _currentScale = 1.0; // Reset scale when changing media
+            _currentScale = 1.0;
             _loadVideoController();
           });
         },
         itemBuilder: (_, index) {
           final media = widget.media[index];
           if (media.type == MediaType.image) {
-            // Use InteractiveViewer for pinch-zoom
             return Center(
               child: InteractiveViewer(
                 maxScale: 5.0,
@@ -517,16 +466,14 @@ class _FullScreenMediaViewState extends State<FullScreenMediaView> {
               ),
             );
           } else {
-            // Video pinch-zoom
             return GestureDetector(
-              onScaleStart: (details) {
-                _baseScale = _currentScale;
-              },
-              onScaleUpdate: (details) {
-                setState(() {
-                  _currentScale = (_baseScale * details.scale).clamp(1.0, 3.0);
-                });
-              },
+              onScaleStart: (details) => _baseScale = _currentScale,
+              onScaleUpdate: (details) => setState(
+                () => _currentScale = (_baseScale * details.scale).clamp(
+                  1.0,
+                  3.0,
+                ),
+              ),
               child: Center(
                 child:
                     _videoController != null &&
@@ -546,13 +493,11 @@ class _FullScreenMediaViewState extends State<FullScreenMediaView> {
       ),
       floatingActionButton: _videoController != null
           ? FloatingActionButton(
-              onPressed: () {
-                setState(() {
-                  _videoController!.value.isPlaying
-                      ? _videoController!.pause()
-                      : _videoController!.play();
-                });
-              },
+              onPressed: () => setState(() {
+                _videoController!.value.isPlaying
+                    ? _videoController!.pause()
+                    : _videoController!.play();
+              }),
               child: Icon(
                 _videoController!.value.isPlaying
                     ? Icons.pause

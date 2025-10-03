@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:open_file/open_file.dart';
 import 'package:photomanager_practice/screen/camera_screen.dart';
 import 'package:photomanager_practice/screen/gallery_screen.dart';
 import 'package:photomanager_practice/screen/pdf_viewer_screen.dart';
@@ -44,6 +43,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   String selectedSegment = 'Folders';
   List<Directory> folderItems = [];
   List<File> imageItems = [];
+  List<File> pdfFiles = [];
   List<Map<String, dynamic>> apiPhotos = [];
   bool isSearching = false;
   String searchQuery = '';
@@ -75,9 +75,13 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   List<dynamic> images = [];
 
   bool isMedia(String filePath) {
-    final mediaExtensions = ['jpg', 'jpeg', 'png', 'mp4', 'pdf'];
+    final mediaExtensions = ['jpg', 'jpeg', 'png', 'mp4'];
     final extension = filePath.split('.').last.toLowerCase();
     return mediaExtensions.contains(extension);
+  }
+
+  bool isPdf(String path) {
+    return path.toLowerCase().endsWith('.pdf');
   }
 
   bool isVideo(String filePath) {
@@ -249,9 +253,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
         if (sub.toLowerCase() != _mainFolderName.toLowerCase()) {
           dirs.add(entity);
         }
-      } else if (entity is File &&
-          (isMedia(entity.path) || isPdf(entity.path))) {
-        files.add(entity);
+      } else if (entity is File) {
+        if (isMedia(entity.path) || isPdf(entity.path)) {
+          files.add(entity);
+        }
       }
     }
 
@@ -261,14 +266,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     setState(() {
       folderItems = dirs;
       imageItems = files; // now contains images + videos + PDFs
+      pdfFiles = files.where((f) => isPdf(f.path)).toList();
       items = [...dirs, ...files];
       filteredFolders = List.from(dirs);
+      print("📑 Found PDFs: ${pdfFiles.map((f) => f.path).toList()}");
     });
-  }
-
-  // helper function to check for PDFs
-  bool isPdf(String path) {
-    return path.toLowerCase().endsWith('.pdf');
   }
 
   void _filterItems(String query) {
@@ -556,38 +558,26 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   }
 
   Future<void> _openScanScreen() async {
-    await Navigator.push(
+    final pdfFile = await Navigator.push<File?>(
       context,
       MaterialPageRoute(
         builder: (_) => ScanScreen(
-          saveFolder: widget.isShared ? null : widget.folder!,
-          sharedFolderId: widget.isShared ? widget.sharedFolderId : null,
+          saveFolder: widget.folder,
           userId: widget.userId,
           folderName: widget.folder != null
               ? widget.folder!.path.split('/').last
               : '',
-          onPdfCreated: (file) async {
-            final path = file.path;
-
-            if (widget.isShared) {
-              if (!PhotoService.uploadedFiles.value.contains(path)) {
-                setState(() {
-                  _newlyTakenPhotos.add({"path": path, "local": true});
-                });
-              }
-              await _loadSharedPhotos(widget.sharedFolderId!);
-            } else {
-              // Add immediately to imageItems so it appears without reloading folder
-              setState(() {
-                final newFile = File(path);
-                imageItems.insert(0, newFile);
-                items = [...folderItems, ...imageItems];
-              });
-            }
-          },
         ),
       ),
     );
+
+    if (pdfFile != null) {
+      print("📄 Got PDF back in PhotoListScreen: ${pdfFile.path}");
+
+      // ✅ Instead of inserting manually, reload from disk
+      await Future.delayed(const Duration(milliseconds: 300));
+      _loadItems();
+    }
   }
 
   Future<void> _renamePdf(File pdfFile) async {
@@ -831,9 +821,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                             style: textTheme.bodyMedium,
                           ),
                         )
-                      : _buildPdfListCards(
-                          imageItems.where((f) => isPdf(f.path)).toList(),
-                        ),
+                      : _buildPdfListCards(pdfFiles),
                 ],
               ),
             ),
@@ -856,8 +844,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 if (index == 3) _showCreateSubFolderDialog();
               },
               onCameraTap: _takePhoto,
-              onScanTap: () {
-                _openScanScreen(); // call the async function, but closure itself is not async
+              onScanTap: () async {
+                await _openScanScreen(); // call the async function, but closure itself is not async
               },
               onUploadTap: () async {
                 if (widget.isShared && widget.sharedFolderId != null) {
@@ -1095,8 +1083,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                           : Image.file(
                               file,
                               fit: BoxFit.cover,
-                              cacheWidth: 300,
-                              cacheHeight: 300,
+                              // cacheWidth: 300,
+                              // cacheHeight: 300,
                               errorBuilder: (_, __, ___) =>
                                   const Icon(Icons.broken_image),
                             ),
@@ -1260,16 +1248,16 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                 ? Image.file(
                                     File(localPath),
                                     fit: BoxFit.cover,
-                                    cacheWidth: 300,
-                                    cacheHeight: 300,
+                                    // cacheWidth: 300,
+                                    // cacheHeight: 300,
                                     errorBuilder: (_, __, ___) =>
                                         const Icon(Icons.broken_image),
                                   )
                                 : Image.network(
                                     serverPath,
                                     fit: BoxFit.cover,
-                                    cacheWidth: 300,
-                                    cacheHeight: 300,
+                                    // cacheWidth: 300,
+                                    // cacheHeight: 300,
                                     errorBuilder: (_, __, ___) =>
                                         const Icon(Icons.broken_image),
                                   )),

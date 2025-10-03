@@ -51,7 +51,7 @@ class _ScanScreenState extends State<ScanScreen> {
       );
 
       if (imagePaths == null || imagePaths.isEmpty) {
-        Navigator.of(context).pop(); // user cancelled
+        Navigator.of(context).pop(pdfFile);
         return;
       }
 
@@ -67,7 +67,8 @@ class _ScanScreenState extends State<ScanScreen> {
 
       if (pdf != null) {
         widget.onPdfCreated?.call(pdf); // send PDF back
-        //Navigator.of(context).pop([pdf.path]); // return list of paths
+        print("📤 Returning PDF to PhotoListScreen");
+        //Navigator.of(context).pop([pdf]); // return list of paths
       }
     } catch (e) {
       debugPrint("Scan error: $e");
@@ -141,54 +142,6 @@ class _ScanScreenState extends State<ScanScreen> {
     if (pdfFile != null) OpenFile.open(pdfFile!.path);
   }
 
-  Future<void> _renamePdf() async {
-    if (pdfFile == null) return;
-
-    final currentPdf = pdfFile!;
-    String currentName = currentPdf.path.split('/').last.replaceAll('.pdf', '');
-
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) {
-        final controller = TextEditingController(text: currentName);
-        return AlertDialog(
-          title: const Text('Rename PDF'),
-          content: TextField(
-            controller: controller,
-            decoration: const InputDecoration(hintText: 'Enter new PDF name'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, null),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final input = controller.text.trim();
-                if (input.isNotEmpty) Navigator.pop(context, input);
-              },
-              child: const Text('Rename'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (result == null) return; // user cancelled
-
-    final newPath = '${currentPdf.parent.path}/$result.pdf';
-    final newFile = await currentPdf.rename(newPath);
-
-    setState(() => pdfFile = newFile);
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('PDF renamed to $result.pdf')));
-
-    // Call the callback with the updated file
-    widget.onPdfCreated?.call(newFile);
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -198,8 +151,8 @@ class _ScanScreenState extends State<ScanScreen> {
         // If a PDF was created, send it back before popping
         if (pdfFile != null) {
           widget.onPdfCreated?.call(pdfFile!);
-          Navigator.of(context).pop(pdfFile); // return file to caller
-          return false; // prevent double pop
+          Navigator.of(context).pop(pdfFile);
+          return false;
         }
         return true;
       },
@@ -215,11 +168,6 @@ class _ScanScreenState extends State<ScanScreen> {
                 icon: const Icon(Icons.picture_as_pdf),
                 onPressed: _openPdf,
                 tooltip: 'Open PDF',
-              ),
-              IconButton(
-                icon: const Icon(Icons.edit_note),
-                onPressed: _renamePdf,
-                tooltip: 'Rename PDF',
               ),
             ],
           ],

@@ -15,6 +15,7 @@ class BottomTabs extends StatelessWidget {
   final bool scanDisabled;
   final void Function(int)? onCreateFolder;
   final VoidCallback? onCameraTap;
+  final VoidCallback? onScanTap;
   final VoidCallback? onUploadTap;
   final VoidCallback? onUploadComplete;
 
@@ -44,11 +45,11 @@ class BottomTabs extends StatelessWidget {
     this.scanDisabled = false,
     this.onCreateFolder,
     this.onCameraTap,
+    this.onScanTap,
     this.onUploadTap,
     this.onUploadComplete,
     required this.userId,
     required this.folderName,
-    required Null Function() onScanTap,
   });
 
   bool isImage(String filePath) {
@@ -307,18 +308,24 @@ class BottomTabs extends StatelessWidget {
           if (index == 2) {
             // Scan tab
             if (scanDisabled) {
-              _resetTab(tabController); // keep user on current tab
-              return; // do nothing
+              _resetTab(tabController);
+              return;
             }
 
             _resetTab(tabController);
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    ScanScreen(userId: userId, folderName: folderName),
-              ),
-            );
+
+            if (onScanTap != null) {
+              onScanTap!(); // ✅ Now PhotoListScreen._openScanScreen() runs
+            } else {
+              // fallback if no callback passed
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ScanScreen(userId: userId, folderName: folderName),
+                ),
+              );
+            }
             return;
           }
 
