@@ -99,18 +99,18 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     // 🔄 Get uploaded files
     final uploadedSet = PhotoService.uploadedFiles.value;
 
-    // 📂 Local images & videos (only pending)
+    // 📂 Local images & videos (pending or just captured)
     final localFiles = dir
         .listSync()
         .whereType<File>()
-        .where((f) => isMedia(f.path) && !uploadedSet.contains(f.path))
+        .where((f) => isMedia(f.path))
         .toList();
 
     final localPhotos = localFiles
-        .map((f) => {"path": f.path, "local": true})
+        .map((f) => {"path": f.path, "local": !uploadedSet.contains(f.path)})
         .toList();
 
-    // 🌐 Server images (not uploaded by this device)
+    // 🌐 Server photos
     final service = FolderShareService();
     final data = await service.getSharedFolderPhotos(folderId);
 
@@ -121,15 +121,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       ).map((p) => {"path": p['path'], "local": false}).toList();
     }
 
-    // 🔹 Remove uploaded files from _newlyTakenPhotos
-    _newlyTakenPhotos = _newlyTakenPhotos
-        .where((p) => !uploadedSet.contains(p['path']))
-        .toList();
-
-    // ✅ Merge all photos
+    // 🔹 Merge: newly taken + local + server, remove duplicates by filename
     final allPhotos = [..._newlyTakenPhotos, ...localPhotos, ...serverPhotos];
-
-    // ✅ Remove duplicates by filename
     final uniquePhotos = <String, Map<String, dynamic>>{};
     for (var photo in allPhotos) {
       final filename = photo['path'].split('/').last;
@@ -849,54 +842,54 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               },
               onUploadTap: () async {
                 if (widget.isShared && widget.sharedFolderId != null) {
-                  // 🔄 Upload shared folder photos
                   final dir = Directory(
                     '/storage/emulated/0/Pictures/MyApp/Shared/${widget.sharedFolderId}',
                   );
 
-                  if (await dir.exists()) {
-                    final imageFiles = <File>[];
+                  if (!await dir.exists()) return;
 
-                    for (var entity in dir.listSync(recursive: true)) {
-                      if (entity is File && isMedia(entity.path)) {
-                        imageFiles.add(entity);
-                      }
-                    }
-
-                    print(
-                      "📸 Found ${imageFiles.length} images: ${imageFiles.map((f) => f.path).toList()}",
-                    );
-
-                    if (imageFiles.isNotEmpty) {
-                      final service = FolderShareService();
-                      final success = await service.uploadToSharedFolder(
-                        context,
-                        widget.sharedFolderId!,
-                        imageFiles,
-                      );
-
-                      if (success) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Shared folder uploaded"),
-                          ),
-                        );
-                        _loadSharedPhotos(widget.sharedFolderId!);
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Upload failed")),
-                        );
-                      }
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text("No images found to upload"),
-                        ),
-                      );
+                  final imageFiles = <File>[];
+                  for (var entity in dir.listSync(recursive: true)) {
+                    if (entity is File && isMedia(entity.path)) {
+                      imageFiles.add(entity);
                     }
                   }
+
+                  if (imageFiles.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("No images found to upload"),
+                      ),
+                    );
+                    return;
+                  }
+
+                  final service = FolderShareService();
+                  final success = await service.uploadToSharedFolder(
+                    context,
+                    widget.sharedFolderId!,
+                    imageFiles,
+                  );
+
+                  if (success) {
+                    // ✅ Mark all uploaded photos as local: false
+                    for (var file in imageFiles) {
+                      final index = _newlyTakenPhotos.indexWhere(
+                        (p) => p['path'] == file.path,
+                      );
+                      if (index != -1)
+                        _newlyTakenPhotos[index]['local'] = false;
+                    }
+
+                    // 🔄 Refresh shared folder list
+                    await _loadSharedPhotos(widget.sharedFolderId!);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Upload failed")),
+                    );
+                  }
                 } else {
-                  // 🔄 Upload personal photos
+                  // Personal folder upload
                   await PhotoService.uploadImagesToServer(
                     null,
                     context: context,
@@ -1160,11 +1153,29 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     return ValueListenableBuilder<Set<String>>(
       valueListenable: PhotoService.uploadedFiles,
       builder: (context, uploadedSet, _) {
-        // Filter newly taken photos to exclude uploaded ones
-        final displayedPhotos = photos.where((p) {
-          final filename = p['path'].split('/').last;
-          return !uploadedSet.any((uploaded) => uploaded.endsWith(filename));
+        // Step 1: Remove uploaded photos
+        final filteredPhotos = photos.where((p) {
+          final filename = p['path'].split('/').last.toLowerCase();
+          return !uploadedSet.any(
+            (uploaded) => uploaded.toLowerCase().endsWith(filename),
+          );
         }).toList();
+
+        for (var p in filteredPhotos) {
+          print("Photo path: ${p['path']}");
+        }
+
+        // Step 2: Remove duplicate filenames, prefer local copies
+        final Map<String, Map<String, dynamic>> uniquePhotos = {};
+        for (var p in filteredPhotos) {
+          final filename = p['path'].split('/').last.toLowerCase();
+          if (!uniquePhotos.containsKey(filename) || p['local'] == true) {
+            uniquePhotos[filename] = p;
+          }
+        }
+
+        // Step 3: Final list to display
+        final displayedPhotos = uniquePhotos.values.toList();
 
         if (displayedPhotos.isEmpty) {
           return Center(
@@ -1175,6 +1186,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           );
         }
 
+        // Step 4: Build Grid
         return GridView.builder(
           padding: const EdgeInsets.all(8),
           itemCount: displayedPhotos.length,
@@ -1188,7 +1200,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             final isLocal = photo['local'] == true;
             final localPath = photo['path'];
             final serverPath =
-                "http://192.168.1.13:8000/storage/${photo['path']}";
+                "https://test.techstrota.com/storage/${photo['path']}";
             final filename = localPath.split('/').last;
             final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
             final isSelected = selectedImages.contains(localPath);
@@ -1248,16 +1260,12 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                 ? Image.file(
                                     File(localPath),
                                     fit: BoxFit.cover,
-                                    // cacheWidth: 300,
-                                    // cacheHeight: 300,
                                     errorBuilder: (_, __, ___) =>
                                         const Icon(Icons.broken_image),
                                   )
                                 : Image.network(
                                     serverPath,
                                     fit: BoxFit.cover,
-                                    // cacheWidth: 300,
-                                    // cacheHeight: 300,
                                     errorBuilder: (_, __, ___) =>
                                         const Icon(Icons.broken_image),
                                   )),

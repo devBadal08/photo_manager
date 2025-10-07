@@ -476,6 +476,7 @@ class _FolderScreenState extends State<FolderScreen>
           onUploadComplete: () {
             setState(() {
               _loadFolders(); // ✅ re-scan folders and update counts
+              _countFoldersAndImages();
             });
           },
         ),

@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class FolderShareService {
   static const String baseUrl =
-      "http://192.168.1.13:8000/api"; // change if needed
+      "https://test.techstrota.com/api"; // change if needed
 
   // Helper: get token
   Future<String?> _getToken() async {
@@ -114,13 +114,9 @@ class FolderShareService {
 
     if (sharedData != null && sharedData['photos'] != null) {
       for (var p in sharedData['photos']) {
-        if (sharedData != null && sharedData['photos'] != null) {
-          for (var p in sharedData['photos']) {
-            final path = p['path']?.toString(); // use "path", not "filename"
-            if (path != null) {
-              uploadedBasenames.add(normalizeFileName(path));
-            }
-          }
+        final path = p['path']?.toString();
+        if (path != null) {
+          uploadedBasenames.add(normalizeFileName(path));
         }
       }
     }

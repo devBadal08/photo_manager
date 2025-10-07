@@ -5,6 +5,7 @@ import 'package:camera/camera.dart' hide ImageFormat;
 import 'package:video_player/video_player.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 enum MediaType { image, video }
 
@@ -41,6 +42,7 @@ class _CameraScreenState extends State<CameraScreen> {
   FlashMode _flashMode = FlashMode.off;
   double _currentZoom = 1.0;
   double _baseZoom = 1.0;
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
   void initState() {
@@ -76,6 +78,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
     setState(() => _isCapturing = true);
     try {
+      await _audioPlayer.play(AssetSource('sounds/camera_sound2.mp3'));
       final XFile image = await _controller.takePicture();
       File compressedFile = await PhotoService.compressImage(File(image.path));
 
