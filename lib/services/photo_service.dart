@@ -118,7 +118,7 @@ class PhotoService {
         await FlutterImageCompress.compressAndGetFile(
           file.absolute.path,
           targetPath,
-          quality: 70,
+          quality: 85,
         );
 
     if (compressedXFile == null) {

@@ -69,7 +69,7 @@ class BottomTabs extends StatelessWidget {
         await FlutterImageCompress.compressAndGetFile(
           file.absolute.path,
           targetPath,
-          quality: 60,
+          quality: 85,
         );
 
     if (compressedXFile == null) {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -44,6 +45,13 @@ class _CameraScreenState extends State<CameraScreen> {
   double _baseZoom = 1.0;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  // Focus indicator
+  Offset? _focusPoint;
+  bool _showFocusIndicator = false;
+
+  Timer? _recordingTimer;
+  int _recordingSeconds = 0;
+
   @override
   void initState() {
     super.initState();
@@ -57,11 +65,15 @@ class _CameraScreenState extends State<CameraScreen> {
 
     _controller = CameraController(
       cameras[_currentCameraIndex],
-      ResolutionPreset.ultraHigh,
+      ResolutionPreset.max,
       enableAudio: true,
     );
 
     await _controller.initialize();
+
+    // Enable auto-focus and auto-exposure
+    await _controller.setFocusMode(FocusMode.auto);
+    await _controller.setExposureMode(ExposureMode.auto);
 
     if (!mounted) return;
     setState(() => _isCameraInitialized = true);
@@ -89,7 +101,6 @@ class _CameraScreenState extends State<CameraScreen> {
       final dir = File(newPath).parent;
       if (!await dir.exists()) await dir.create(recursive: true);
       await compressedFile.copy(newPath);
-      //await File(image.path).copy(newPath);
 
       final mediaFile = MediaFile(file: File(newPath), type: MediaType.image);
 
@@ -103,6 +114,21 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
+  // ================= Start / Stop Timer =================
+  void _startRecordingTimer() {
+    _recordingSeconds = 0;
+    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        _recordingSeconds++;
+      });
+    });
+  }
+
+  void _stopRecordingTimer() {
+    _recordingTimer?.cancel();
+    _recordingSeconds = 0;
+  }
+
   Future<void> _startVideoRecording() async {
     if (!_controller.value.isInitialized || _isRecording) return;
 
@@ -110,6 +136,7 @@ class _CameraScreenState extends State<CameraScreen> {
       await _controller.prepareForVideoRecording();
       await _controller.startVideoRecording();
       setState(() => _isRecording = true);
+      _startRecordingTimer();
     } catch (e) {
       debugPrint("Error starting video recording: $e");
     }
@@ -121,10 +148,17 @@ class _CameraScreenState extends State<CameraScreen> {
     try {
       final XFile videoFile = await _controller.stopVideoRecording();
       setState(() => _isRecording = false);
+      _stopRecordingTimer();
       await _compressAndSaveVideo(videoFile);
     } catch (e) {
       debugPrint("Error stopping video recording: $e");
     }
+  }
+
+  String get _formattedRecordingTime {
+    final minutes = (_recordingSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_recordingSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
   }
 
   Future<File?> _compressAndSaveVideo(XFile videoFile) async {
@@ -179,7 +213,42 @@ class _CameraScreenState extends State<CameraScreen> {
 
   void _returnCapturedMedia() {
     final paths = capturedMedia.map((m) => m.file.path).toList();
-    Navigator.pop(context, paths); // returns captured paths
+    Navigator.pop(context, paths);
+  }
+
+  // ===================== Tap-to-Focus =====================
+  Future<void> _onViewFinderTap(
+    TapDownDetails details,
+    BuildContext context,
+  ) async {
+    if (!_controller.value.isInitialized) return;
+
+    final box = context.findRenderObject() as RenderBox;
+    final offset = box.globalToLocal(details.globalPosition);
+    final size = box.size;
+
+    final dx = offset.dx / size.width;
+    final dy = offset.dy / size.height;
+
+    try {
+      await _controller.setFocusPoint(Offset(dx, dy));
+      await _controller.setExposurePoint(Offset(dx, dy));
+    } catch (e) {
+      debugPrint('Error setting focus: $e');
+    }
+
+    // Show focus indicator
+    setState(() {
+      _focusPoint = offset;
+      _showFocusIndicator = true;
+    });
+
+    // Hide after 1 second
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() => _showFocusIndicator = false);
+      }
+    });
   }
 
   @override
@@ -196,8 +265,10 @@ class _CameraScreenState extends State<CameraScreen> {
       child: Scaffold(
         body: Stack(
           children: [
+            // ================= Camera Preview =================
             Positioned.fill(
               child: GestureDetector(
+                onTapDown: (details) => _onViewFinderTap(details, context),
                 onScaleStart: (details) => _baseZoom = _currentZoom,
                 onScaleUpdate: (details) async {
                   final maxZoom = await _controller.getMaxZoomLevel();
@@ -211,10 +282,77 @@ class _CameraScreenState extends State<CameraScreen> {
                 },
                 child: AspectRatio(
                   aspectRatio: _controller.value.aspectRatio,
-                  child: CameraPreview(_controller),
+                  child: Stack(
+                    children: [
+                      CameraPreview(_controller),
+                      // Focus indicator
+                      if (_showFocusIndicator && _focusPoint != null)
+                        Positioned(
+                          left: _focusPoint!.dx - 25,
+                          top: _focusPoint!.dy - 25,
+                          child: Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: Colors.yellow,
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      // ================= Recording Timer (Centered in Top Bar) =================
+                      if (_isRecording)
+                        Positioned(
+                          top: 50,
+                          left: 0,
+                          right: 0,
+                          child: Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 4,
+                                horizontal: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Blinking red dot
+                                  AnimatedOpacity(
+                                    opacity: _recordingSeconds % 2 == 0
+                                        ? 1.0
+                                        : 0.0,
+                                    duration: const Duration(milliseconds: 500),
+                                    child: const Icon(
+                                      Icons.circle,
+                                      color: Colors.redAccent,
+                                      size: 12,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _formattedRecordingTime,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
+            // ================= Flash & Top UI =================
             Positioned(
               top: 0,
               left: 0,
@@ -244,6 +382,7 @@ class _CameraScreenState extends State<CameraScreen> {
                 ),
               ),
             ),
+            // ================= Bottom Controls =================
             Align(
               alignment: Alignment.bottomCenter,
               child: Container(
@@ -255,7 +394,6 @@ class _CameraScreenState extends State<CameraScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Mode selector
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -345,7 +483,6 @@ class _CameraScreenState extends State<CameraScreen> {
                           )
                         else
                           const SizedBox(width: 45, height: 45),
-
                         // Capture button
                         GestureDetector(
                           onTap: () async {
@@ -358,8 +495,8 @@ class _CameraScreenState extends State<CameraScreen> {
                             }
                           },
                           child: Container(
-                            width: 70,
-                            height: 70,
+                            width: 60,
+                            height: 60,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(color: Colors.white, width: 4),

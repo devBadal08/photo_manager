@@ -56,6 +56,7 @@ dependencies:
   video_compress: ^3.1.0
   syncfusion_flutter_pdfviewer: ^28.1.37
   audioplayers: ^6.5.1
+  
 
 flutter_icons:
   android: true
@@ -93,8 +94,9 @@ flutter:
     - assets/images/logo.jpg
     - assets/images/logo1.png
     - assets/images/company_logo.png
-    - assets/sounds/camera_sound1.mp3
+    - assets/sounds/camera_sound3.mp3
     - assets/sounds/camera_sound2.mp3
+
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
