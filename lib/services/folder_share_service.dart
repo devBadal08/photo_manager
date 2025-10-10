@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class FolderShareService {
   static const String baseUrl =
-      "https://test.techstrota.com/api"; // change if needed
+      "http://192.168.1.13:8000/api"; // change if needed
 
   // Helper: get token
   Future<String?> _getToken() async {
@@ -103,44 +103,45 @@ class FolderShareService {
     final token = await _getToken();
     if (token == null) return false;
 
-    // Helper to normalize filenames (lowercase, basename only)
-    String normalizeFileName(String path) {
-      return path.split('/').last.toLowerCase();
-    }
+    String normalizeFileName(String path) => path.split('/').last.toLowerCase();
 
-    // Step 1: Get already uploaded photos
+    // Step 1: Get already uploaded photos from server
     final sharedData = await getSharedFolderPhotos(folderId);
     final Set<String> uploadedBasenames = {};
 
     if (sharedData != null && sharedData['photos'] != null) {
       for (var p in sharedData['photos']) {
         final path = p['path']?.toString();
-        if (path != null) {
-          uploadedBasenames.add(normalizeFileName(path));
-        }
+        if (path != null) uploadedBasenames.add(normalizeFileName(path));
       }
     }
 
-    // Step 2: Filter out already uploaded files
-    final List<File> newImages = images.where((file) {
+    print("Already uploaded: $uploadedBasenames");
+    print(
+      "Local to upload: ${images.map((f) => normalizeFileName(f.path)).toList()}",
+    );
+
+    // Step 2: Filter out already uploaded images (remaining images to upload)
+    final List<File> remainingImages = images.where((file) {
       final name = normalizeFileName(file.path);
-      return !uploadedBasenames.contains(name);
+      return !uploadedBasenames.any((uploaded) => uploaded.endsWith(name));
     }).toList();
 
-    if (newImages.isEmpty) {
+    // Step 3: Show message if nothing is left to upload
+    if (remainingImages.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("No new images to upload.")));
       return true;
     }
 
-    // Step 3: Ask user for confirmation
+    // Step 4: Show confirmation dialog with **only remaining images**
     final bool confirm = await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Confirm Upload"),
         content: Text(
-          "${newImages.length} new image${newImages.length > 1 ? 's' : ''} are ready to upload. Do you want to continue?",
+          "${remainingImages.length} image${remainingImages.length > 1 ? 's' : ''} will be uploaded.",
         ),
         actions: [
           TextButton(
@@ -162,14 +163,14 @@ class FolderShareService {
       return false;
     }
 
-    // Step 4: Upload new images
+    // Step 5: Upload remaining images
     var request = http.MultipartRequest(
       "POST",
       Uri.parse("$baseUrl/shared-folders/$folderId/upload"),
     );
     request.headers["Authorization"] = "Bearer $token";
 
-    for (var file in newImages) {
+    for (var file in remainingImages) {
       request.files.add(
         await http.MultipartFile.fromPath("photos[]", file.path),
       );
@@ -181,7 +182,7 @@ class FolderShareService {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            "Uploaded ${newImages.length} image${newImages.length > 1 ? 's' : ''}.",
+            "Uploaded ${remainingImages.length} image${remainingImages.length > 1 ? 's' : ''}.",
           ),
         ),
       );

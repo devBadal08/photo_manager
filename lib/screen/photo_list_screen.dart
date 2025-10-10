@@ -96,24 +96,17 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     );
     if (!await dir.exists()) await dir.create(recursive: true);
 
-    // 🔄 Get uploaded files
+    // Get uploaded files set
     final uploadedSet = PhotoService.uploadedFiles.value;
 
-    // 📂 Local images & videos (pending or just captured)
-    final localFiles = dir
-        .listSync()
-        .whereType<File>()
-        .where((f) => isMedia(f.path))
-        .toList();
+    // Filter newly taken photos: keep all local photos that are not yet uploaded
+    final filteredNewPhotos = _newlyTakenPhotos.where((p) {
+      return p['local'] == true && !uploadedSet.contains(p['path']);
+    }).toList();
 
-    final localPhotos = localFiles
-        .map((f) => {"path": f.path, "local": !uploadedSet.contains(f.path)})
-        .toList();
-
-    // 🌐 Server photos
+    // Server photos
     final service = FolderShareService();
     final data = await service.getSharedFolderPhotos(folderId);
-
     List<Map<String, dynamic>> serverPhotos = [];
     if (data != null && data['success'] == true) {
       serverPhotos = List<Map<String, dynamic>>.from(
@@ -121,12 +114,16 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       ).map((p) => {"path": p['path'], "local": false}).toList();
     }
 
-    // 🔹 Merge: newly taken + local + server, remove duplicates by filename
-    final allPhotos = [..._newlyTakenPhotos, ...localPhotos, ...serverPhotos];
+    // Merge newly taken + server photos
+    final allPhotos = [...filteredNewPhotos, ...serverPhotos];
+
+    // Deduplicate by filename to avoid duplicates
     final uniquePhotos = <String, Map<String, dynamic>>{};
     for (var photo in allPhotos) {
-      final filename = photo['path'].split('/').last;
-      uniquePhotos[filename] = photo;
+      final filename = photo['path'].split('/').last.toLowerCase();
+      if (!uniquePhotos.containsKey(filename) || photo['local'] == true) {
+        uniquePhotos[filename] = photo;
+      }
     }
 
     setState(() {
@@ -909,6 +906,175 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     );
   }
 
+  Widget _buildApiImageGrid(List<Map<String, dynamic>> photos) {
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: PhotoService.uploadedFiles,
+      builder: (context, uploadedSet, _) {
+        // Step 1: Remove uploaded photos
+        final filteredPhotos = photos.where((p) {
+          final filename = p['path'].split('/').last.toLowerCase();
+          return !uploadedSet.any(
+            (uploaded) => uploaded.toLowerCase().endsWith(filename),
+          );
+        }).toList();
+
+        for (var p in filteredPhotos) {
+          print("Photo path: ${p['path']}");
+        }
+
+        // Step 2: Remove duplicate filenames, prefer local copies
+        final Map<String, Map<String, dynamic>> uniquePhotos = {};
+        for (var p in filteredPhotos) {
+          final filename = p['path'].split('/').last.toLowerCase();
+          if (!uniquePhotos.containsKey(filename) || p['local'] == true) {
+            uniquePhotos[filename] = p;
+          }
+        }
+
+        // Step 3: Final list to display
+        final displayedPhotos = uniquePhotos.values.toList();
+
+        if (displayedPhotos.isEmpty) {
+          return Center(
+            child: Text(
+              "No images yet in shared folder",
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          );
+        }
+
+        // Step 4: Build Grid
+        return GridView.builder(
+          padding: const EdgeInsets.all(8),
+          itemCount: displayedPhotos.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            crossAxisSpacing: 4,
+            mainAxisSpacing: 4,
+          ),
+          itemBuilder: (context, index) {
+            final photo = displayedPhotos[index];
+            final isLocal = photo['local'] == true;
+            final localPath = photo['path'];
+            final serverPath =
+                "http://192.168.1.13:8000/storage/${photo['path']}";
+            final filename = localPath.split('/').last;
+            final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
+            final isSelected = selectedImages.contains(localPath);
+
+            return GestureDetector(
+              onLongPress: () {
+                setState(() {
+                  selectionMode = true;
+                  if (!selectedImages.contains(localPath)) {
+                    selectedImages.add(localPath);
+                  }
+                });
+              },
+              onTap: () {
+                if (selectionMode) {
+                  setState(() {
+                    if (isSelected) {
+                      selectedImages.remove(localPath);
+                    } else {
+                      selectedImages.add(localPath);
+                    }
+                  });
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => GalleryScreen(
+                        images: displayedPhotos
+                            .map((p) => File(p['path']))
+                            .toList(),
+                        startIndex: index,
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: isVideo(localPath)
+                          ? Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Container(color: Colors.black12),
+                                const Center(
+                                  child: Icon(
+                                    Icons.videocam,
+                                    color: Colors.white70,
+                                    size: 40,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : (isLocal
+                                ? Image.file(
+                                    File(localPath),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        const Icon(Icons.broken_image),
+                                  )
+                                : Image.network(
+                                    serverPath,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        const Icon(Icons.broken_image),
+                                  )),
+                    ),
+                  ),
+                  // Selection checkbox
+                  if (selectionMode)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Checkbox(
+                        value: isSelected,
+                        onChanged: (checked) {
+                          setState(() {
+                            if (checked == true) {
+                              selectedImages.add(localPath);
+                            } else {
+                              selectedImages.remove(localPath);
+                            }
+                          });
+                        },
+                        activeColor: Colors.blue,
+                        checkColor: Colors.white,
+                      ),
+                    ),
+                  // Uploaded tick
+                  if (isUploaded)
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.green,
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(4),
+                        child: const Icon(
+                          Icons.check,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildFolderListCards(List<Directory> folders) {
     if (folders.isEmpty) {
       return const Center(
@@ -1137,175 +1303,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                             color: Colors.white,
                             size: 18,
                           ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildApiImageGrid(List<Map<String, dynamic>> photos) {
-    return ValueListenableBuilder<Set<String>>(
-      valueListenable: PhotoService.uploadedFiles,
-      builder: (context, uploadedSet, _) {
-        // Step 1: Remove uploaded photos
-        final filteredPhotos = photos.where((p) {
-          final filename = p['path'].split('/').last.toLowerCase();
-          return !uploadedSet.any(
-            (uploaded) => uploaded.toLowerCase().endsWith(filename),
-          );
-        }).toList();
-
-        for (var p in filteredPhotos) {
-          print("Photo path: ${p['path']}");
-        }
-
-        // Step 2: Remove duplicate filenames, prefer local copies
-        final Map<String, Map<String, dynamic>> uniquePhotos = {};
-        for (var p in filteredPhotos) {
-          final filename = p['path'].split('/').last.toLowerCase();
-          if (!uniquePhotos.containsKey(filename) || p['local'] == true) {
-            uniquePhotos[filename] = p;
-          }
-        }
-
-        // Step 3: Final list to display
-        final displayedPhotos = uniquePhotos.values.toList();
-
-        if (displayedPhotos.isEmpty) {
-          return Center(
-            child: Text(
-              "No images yet in shared folder",
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          );
-        }
-
-        // Step 4: Build Grid
-        return GridView.builder(
-          padding: const EdgeInsets.all(8),
-          itemCount: displayedPhotos.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 4,
-            mainAxisSpacing: 4,
-          ),
-          itemBuilder: (context, index) {
-            final photo = displayedPhotos[index];
-            final isLocal = photo['local'] == true;
-            final localPath = photo['path'];
-            final serverPath =
-                "https://test.techstrota.com/storage/${photo['path']}";
-            final filename = localPath.split('/').last;
-            final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
-            final isSelected = selectedImages.contains(localPath);
-
-            return GestureDetector(
-              onLongPress: () {
-                setState(() {
-                  selectionMode = true;
-                  if (!selectedImages.contains(localPath)) {
-                    selectedImages.add(localPath);
-                  }
-                });
-              },
-              onTap: () {
-                if (selectionMode) {
-                  setState(() {
-                    if (isSelected) {
-                      selectedImages.remove(localPath);
-                    } else {
-                      selectedImages.add(localPath);
-                    }
-                  });
-                } else {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => GalleryScreen(
-                        images: displayedPhotos
-                            .map((p) => File(p['path']))
-                            .toList(),
-                        startIndex: index,
-                      ),
-                    ),
-                  );
-                }
-              },
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: isVideo(localPath)
-                          ? Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Container(color: Colors.black12),
-                                const Center(
-                                  child: Icon(
-                                    Icons.videocam,
-                                    color: Colors.white70,
-                                    size: 40,
-                                  ),
-                                ),
-                              ],
-                            )
-                          : (isLocal
-                                ? Image.file(
-                                    File(localPath),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        const Icon(Icons.broken_image),
-                                  )
-                                : Image.network(
-                                    serverPath,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        const Icon(Icons.broken_image),
-                                  )),
-                    ),
-                  ),
-                  // Selection checkbox
-                  if (selectionMode)
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: Checkbox(
-                        value: isSelected,
-                        onChanged: (checked) {
-                          setState(() {
-                            if (checked == true) {
-                              selectedImages.add(localPath);
-                            } else {
-                              selectedImages.remove(localPath);
-                            }
-                          });
-                        },
-                        activeColor: Colors.blue,
-                        checkColor: Colors.white,
-                      ),
-                    ),
-                  // Uploaded tick
-                  if (isUploaded)
-                    Positioned(
-                      right: 6,
-                      top: 6,
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.green,
-                          shape: BoxShape.circle,
-                        ),
-                        padding: const EdgeInsets.all(4),
-                        child: const Icon(
-                          Icons.check,
-                          color: Colors.white,
-                          size: 18,
                         ),
                       ),
                     ),

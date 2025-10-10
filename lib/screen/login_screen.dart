@@ -36,7 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> login(String email, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('https://test.techstrota.com/api/login'),
+        Uri.parse('http://192.168.1.13:8000/api/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );
@@ -49,7 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final userEmail = data['user']['email'];
         final company = data['user']['company'];
         final rawLogo = company?['company_logo'];
-        final baseUrl = "https://test.techstrota.com/storage/";
+        final baseUrl = "http://192.168.1.13:8000/storage/";
         final companyLogo = rawLogo != null ? "$baseUrl$rawLogo" : null;
 
         final prefs = await SharedPreferences.getInstance();
