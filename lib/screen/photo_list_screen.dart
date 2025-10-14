@@ -248,6 +248,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           files.add(entity);
         }
       }
+      if (isPdf(entity.path)) {
+        print("📘 Found PDF: ${entity.path}");
+      }
     }
 
     dirs.sort((a, b) => b.statSync().changed.compareTo(a.statSync().changed));
@@ -557,16 +560,28 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           folderName: widget.folder != null
               ? widget.folder!.path.split('/').last
               : '',
+          sharedFolderId: widget.sharedFolderId, // pass shared folder ID if any
+          onPdfCreated: (pdf) {
+            // Refresh UI depending on folder type
+            if (widget.sharedFolderId != null) {
+              _loadSharedPhotos(widget.sharedFolderId!);
+            } else {
+              _loadItems();
+            }
+
+            // Optionally insert PDF locally for immediate view
+            setState(() {
+              imageItems.insert(0, pdf);
+              pdfFiles.insert(0, pdf);
+              items = [...folderItems, ...imageItems];
+            });
+          },
         ),
       ),
     );
 
     if (pdfFile != null) {
       print("📄 Got PDF back in PhotoListScreen: ${pdfFile.path}");
-
-      // ✅ Instead of inserting manually, reload from disk
-      await Future.delayed(const Duration(milliseconds: 300));
-      _loadItems();
     }
   }
 
@@ -840,22 +855,23 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               onUploadTap: () async {
                 if (widget.isShared && widget.sharedFolderId != null) {
                   final dir = Directory(
-                    '/storage/emulated/0/Pictures/MyApp/Shared/${widget.sharedFolderId}',
+                    '/storage/emulated/0/Pictures/MyApp/${widget.sharedFolderId}',
                   );
 
                   if (!await dir.exists()) return;
 
-                  final imageFiles = <File>[];
+                  final uploadFiles = <File>[];
                   for (var entity in dir.listSync(recursive: true)) {
-                    if (entity is File && isMedia(entity.path)) {
-                      imageFiles.add(entity);
+                    if (entity is File &&
+                        (isMedia(entity.path) || isPdf(entity.path))) {
+                      uploadFiles.add(entity);
                     }
                   }
 
-                  if (imageFiles.isEmpty) {
+                  if (uploadFiles.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text("No images found to upload"),
+                        content: Text("No images or PDFs found to upload"),
                       ),
                     );
                     return;
@@ -865,12 +881,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   final success = await service.uploadToSharedFolder(
                     context,
                     widget.sharedFolderId!,
-                    imageFiles,
+                    uploadFiles, // now includes PDFs too
                   );
 
                   if (success) {
-                    // ✅ Mark all uploaded photos as local: false
-                    for (var file in imageFiles) {
+                    for (var file in uploadFiles) {
                       final index = _newlyTakenPhotos.indexWhere(
                         (p) => p['path'] == file.path,
                       );
@@ -878,7 +893,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                         _newlyTakenPhotos[index]['local'] = false;
                     }
 
-                    // 🔄 Refresh shared folder list
                     await _loadSharedPhotos(widget.sharedFolderId!);
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -957,7 +971,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             final isLocal = photo['local'] == true;
             final localPath = photo['path'];
             final serverPath =
-                "http://192.168.1.13:8000/storage/${photo['path']}";
+                "http://192.168.1.3:8000/storage/${photo['path']}";
             final filename = localPath.split('/').last;
             final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
             final isSelected = selectedImages.contains(localPath);

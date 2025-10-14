@@ -6,14 +6,15 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:open_file/open_file.dart';
 import 'package:cunning_document_scanner/ios_options.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 class ScanScreen extends StatefulWidget {
   final Directory? saveFolder;
-  final String userId; // required
-  final String folderName; // required
-  final int? sharedFolderId; // optional for shared folders
-  final void Function(File pdfFile)?
-  onPdfCreated; // Add this to ScanScreen constructor
+  final String userId;
+  final String folderName;
+  final int? sharedFolderId;
+  final void Function(File pdfFile)? onPdfCreated;
 
   const ScanScreen({
     Key? key,
@@ -44,7 +45,7 @@ class _ScanScreenState extends State<ScanScreen> {
       final imagePaths = await CunningDocumentScanner.getPictures(
         noOfPages: 10,
         isGalleryImportAllowed: false,
-        iosScannerOptions: IosScannerOptions(
+        iosScannerOptions: const IosScannerOptions(
           imageFormat: IosImageFormat.jpg,
           jpgCompressionQuality: 0.7,
         ),
@@ -62,13 +63,11 @@ class _ScanScreenState extends State<ScanScreen> {
         isScanning = false;
       });
 
-      // Convert images to PDF and return the file path immediately
       final pdf = await _convertImagesToPdf(images);
 
       if (pdf != null) {
-        widget.onPdfCreated?.call(pdf); // send PDF back
+        widget.onPdfCreated?.call(pdf);
         print("📤 Returning PDF to PhotoListScreen");
-        //Navigator.of(context).pop([pdf]); // return list of paths
       }
     } catch (e) {
       debugPrint("Scan error: $e");
@@ -82,7 +81,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Future<File?> _convertImagesToPdf(List<File> images) async {
     try {
-      // 1️⃣ Handle permissions
+      // Request permissions
       if (Platform.isAndroid) {
         final storageStatus = await Permission.storage.request();
         if (!storageStatus.isGranted) {
@@ -91,7 +90,7 @@ class _ScanScreenState extends State<ScanScreen> {
         }
       }
 
-      // 2️⃣ Build folder path
+      // Folder path
       final Directory baseDir = widget.sharedFolderId != null
           ? Directory(
               '/storage/emulated/0/Pictures/MyApp/Shared/${widget.sharedFolderId}',
@@ -102,7 +101,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
       if (!await baseDir.exists()) await baseDir.create(recursive: true);
 
-      // 3️⃣ Create PDF
+      // Create PDF
       final pdf = pw.Document();
       for (final imgFile in images) {
         final image = pw.MemoryImage(await imgFile.readAsBytes());
@@ -115,17 +114,20 @@ class _ScanScreenState extends State<ScanScreen> {
         );
       }
 
-      // 4️⃣ Save PDF
+      // Save PDF
       final pdfPath =
           '${baseDir.path}/scanned_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final file = File(pdfPath);
       await file.writeAsBytes(await pdf.save());
-      if (!mounted) ;
 
       setState(() => pdfFile = file);
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("PDF saved at: $pdfPath")));
+
+      // Upload PDF to server
+      await _uploadPdfToServer(file);
 
       return file;
     } catch (e, st) {
@@ -135,6 +137,54 @@ class _ScanScreenState extends State<ScanScreen> {
         context,
       ).showSnackBar(const SnackBar(content: Text("Failed to save as PDF")));
       return null;
+    }
+  }
+
+  Future<void> _uploadPdfToServer(File pdfFile) async {
+    try {
+      final uri = Uri.parse(
+        'https://yourapi.com/api/upload',
+      ); // <-- change this
+
+      final request = http.MultipartRequest('POST', uri);
+
+      // Add required fields
+      if (widget.sharedFolderId != null) {
+        request.fields['shared_folder_id'] = widget.sharedFolderId.toString();
+      } else {
+        request.fields['user_id'] = widget.userId;
+        request.fields['folder_name'] = widget.folderName;
+      }
+
+      // Add PDF file
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          "files[]",
+          pdfFile.path,
+          contentType: MediaType('application', 'pdf'),
+        ),
+      );
+
+      final response = await request.send();
+
+      if (response.statusCode == 200) {
+        debugPrint("✅ PDF uploaded successfully");
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("PDF uploaded successfully")),
+        );
+      } else {
+        debugPrint("❌ PDF upload failed: ${response.statusCode}");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Failed to upload PDF (${response.statusCode})"),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("PDF upload error: $e");
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Error uploading PDF")));
     }
   }
 
@@ -148,7 +198,6 @@ class _ScanScreenState extends State<ScanScreen> {
 
     return WillPopScope(
       onWillPop: () async {
-        // If a PDF was created, send it back before popping
         if (pdfFile != null) {
           widget.onPdfCreated?.call(pdfFile!);
           Navigator.of(context).pop(pdfFile);
@@ -163,13 +212,12 @@ class _ScanScreenState extends State<ScanScreen> {
           backgroundColor: theme.appBarTheme.backgroundColor,
           foregroundColor: theme.appBarTheme.foregroundColor,
           actions: [
-            if (pdfFile != null) ...[
+            if (pdfFile != null)
               IconButton(
                 icon: const Icon(Icons.picture_as_pdf),
                 onPressed: _openPdf,
                 tooltip: 'Open PDF',
               ),
-            ],
           ],
         ),
         body: isScanning

@@ -41,7 +41,7 @@ class PhotoService {
     required String folderName,
     required String token,
   }) async {
-    final url = Uri.parse('http://192.168.1.13:8000/api/photos/uploadAll');
+    final url = Uri.parse('http://192.168.1.3:8000/api/photos/uploadAll');
 
     try {
       final request = http.MultipartRequest('POST', url)
@@ -226,32 +226,48 @@ class PhotoService {
       return;
     }
 
-    final baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
-    if (!await baseDir.exists()) {
-      if (!silent && context != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("No folders found to upload")),
-        );
+    final baseUserDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
+    final baseSharedDir = Directory(
+      '/storage/emulated/0/Pictures/MyApp/Shared',
+    );
+
+    // Collect all files (user + shared)
+    List<Map<String, dynamic>> fileEntries = [];
+
+    if (await baseUserDir.exists()) {
+      for (var entity in baseUserDir.listSync(recursive: true)) {
+        if (entity is File) {
+          final relativeFolder = entity.parent.path.replaceFirst(
+            baseUserDir.path + '/',
+            '',
+          );
+          fileEntries.add({
+            'file': entity,
+            'folder': relativeFolder,
+            'shared_folder_id': null,
+          });
+        }
       }
-      return;
     }
 
-    // Collect media files and folder names
-    List<File> files = [];
-    List<String> folderNames = [];
-
-    for (var entity in baseDir.listSync(recursive: true)) {
-      if (entity is File) {
-        final relativeFolder = entity.parent.path.replaceFirst(
-          baseDir.path + '/',
-          '',
-        );
-        folderNames.add(relativeFolder);
-        files.add(entity);
+    if (await baseSharedDir.exists()) {
+      for (var entity in baseSharedDir.listSync(recursive: true)) {
+        if (entity is File) {
+          // Extract shared_folder_id from path
+          final segments = entity.parent.path.split(Platform.pathSeparator);
+          final sharedFolderId = int.tryParse(segments.last);
+          if (sharedFolderId != null) {
+            fileEntries.add({
+              'file': entity,
+              'folder': '', // not needed for shared
+              'shared_folder_id': sharedFolderId,
+            });
+          }
+        }
       }
     }
 
-    if (files.isEmpty) {
+    if (fileEntries.isEmpty) {
       if (!silent && context != null && context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -260,16 +276,15 @@ class PhotoService {
       return;
     }
 
-    // Filter only not uploaded
-    final notUploadedPairs =
-        List.generate(files.length, (i) => MapEntry(files[i], folderNames[i]))
-            .where(
-              (entry) =>
-                  !PhotoService.uploadedFiles.value.contains(entry.key.path),
-            )
-            .toList();
+    // Filter not uploaded yet
+    final notUploaded = fileEntries
+        .where(
+          (entry) =>
+              !PhotoService.uploadedFiles.value.contains(entry['file'].path),
+        )
+        .toList();
 
-    if (notUploadedPairs.isEmpty) {
+    if (notUploaded.isEmpty) {
       if (!silent && context != null && context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -278,17 +293,6 @@ class PhotoService {
       return;
     }
 
-    // Separate images and videos
-    final imagePairs = notUploadedPairs
-        .where((e) => isImageFileType(e.key.path))
-        .toList();
-    final videoPairs = notUploadedPairs
-        .where((e) => isVideoFileType(e.key.path))
-        .toList();
-    final pdfPairs = notUploadedPairs
-        .where((e) => e.key.path.toLowerCase().endsWith('.pdf'))
-        .toList();
-
     // Ask for confirmation
     if (!silent && context != null && context.mounted) {
       final confirm = await showDialog<bool>(
@@ -296,7 +300,7 @@ class PhotoService {
         builder: (context) => AlertDialog(
           title: const Text("Upload Confirmation"),
           content: Text(
-            "Do you want to upload ${notUploadedPairs.length} media files to the server?",
+            "Do you want to upload ${notUploaded.length} media files to the server?",
           ),
           actions: [
             TextButton(
@@ -314,9 +318,8 @@ class PhotoService {
     }
 
     final uploadedCount = ValueNotifier<int>(0);
-    final totalFiles = notUploadedPairs.length;
+    final totalFiles = notUploaded.length;
 
-    // Show progress dialog
     if (!silent && context != null && context.mounted) {
       showDialog(
         context: context,
@@ -347,28 +350,35 @@ class PhotoService {
       const batchSize = 10;
       bool allSuccess = true;
 
-      // Function to upload a batch (generic)
-      Future<bool> uploadBatch(
-        List<MapEntry<File, String>> batch,
-        String type,
-      ) async {
+      Future<bool> uploadBatch(List<Map<String, dynamic>> batch) async {
         if (batch.isEmpty) return true;
 
         final request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://192.168.1.13:8000/api/photos/uploadAll'),
+          Uri.parse('http://192.168.1.3:8000/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 
         for (int i = 0; i < batch.length; i++) {
-          final file = batch[i].key;
-          final folder = batch[i].value;
+          final entry = batch[i];
+          final file = entry['file'] as File;
+          final folder = entry['folder'] as String?;
+          final sharedId = entry['shared_folder_id'] as int?;
 
-          // Backend expects folders[0], folders[1], ... for all files
-          request.fields['folders[$i]'] = folder;
+          if (sharedId != null) {
+            request.fields['shared_folder_ids[$i]'] = sharedId.toString();
+          } else {
+            request.fields['folders[$i]'] = folder ?? '';
+          }
+
+          // Determine file type
+          String fieldType = 'images';
+          final ext = file.path.toLowerCase();
+          if (ext.endsWith('.mp4')) fieldType = 'videos';
+          if (ext.endsWith('.pdf')) fieldType = 'pdfs';
 
           request.files.add(
-            await http.MultipartFile.fromPath('$type[$i]', file.path),
+            await http.MultipartFile.fromPath('$fieldType[$i]', file.path),
           );
         }
 
@@ -377,58 +387,31 @@ class PhotoService {
 
         if (response.statusCode == 200) {
           for (final entry in batch) {
-            PhotoService.uploadedFiles.value.add(entry.key.absolute.path);
+            PhotoService.uploadedFiles.value.add(entry['file'].path);
           }
           PhotoService.uploadedFiles.notifyListeners();
           await PhotoService.saveUploadedFiles();
           uploadedCount.value += batch.length;
           return true;
         } else {
-          debugPrint("Batch upload failed ($type): $resStr");
+          debugPrint("Batch upload failed: $resStr");
           return false;
         }
       }
 
-      // Upload images in batches
-      for (int start = 0; start < imagePairs.length; start += batchSize) {
-        final end = (start + batchSize < imagePairs.length)
+      // Upload all files in batches
+      for (int start = 0; start < notUploaded.length; start += batchSize) {
+        final end = (start + batchSize < notUploaded.length)
             ? start + batchSize
-            : imagePairs.length;
-        final batch = imagePairs.sublist(start, end);
-        final success = await uploadBatch(batch, 'images');
+            : notUploaded.length;
+        final batch = notUploaded.sublist(start, end);
+        final success = await uploadBatch(batch);
         if (!success) {
           allSuccess = false;
           break;
         }
       }
 
-      // Upload videos in batches
-      for (int start = 0; start < videoPairs.length; start += batchSize) {
-        final end = (start + batchSize < videoPairs.length)
-            ? start + batchSize
-            : videoPairs.length;
-        final batch = videoPairs.sublist(start, end);
-        final success = await uploadBatch(batch, 'videos');
-        if (!success) {
-          allSuccess = false;
-          break;
-        }
-      }
-
-      // Upload PDFs in batches
-      for (int start = 0; start < pdfPairs.length; start += batchSize) {
-        final end = (start + batchSize < pdfPairs.length)
-            ? start + batchSize
-            : pdfPairs.length;
-        final batch = pdfPairs.sublist(start, end);
-        final success = await uploadBatch(batch, 'pdfs'); // type = 'pdfs'
-        if (!success) {
-          allSuccess = false;
-          break;
-        }
-      }
-
-      // Close progress dialog
       if (!silent && context != null && context.mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(

@@ -96,7 +96,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
       final String newPath = widget.saveFolder != null
           ? '${widget.saveFolder!.path}/${DateTime.now().millisecondsSinceEpoch}.jpg'
-          : '/storage/emulated/0/Pictures/MyApp/Shared/${widget.sharedFolderId}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+          : '/storage/emulated/0/Pictures/MyApp/${widget.sharedFolderId}/${DateTime.now().millisecondsSinceEpoch}.jpg';
 
       final dir = File(newPath).parent;
       if (!await dir.exists()) await dir.create(recursive: true);
@@ -175,7 +175,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
       final String newVideoPath = widget.saveFolder != null
           ? '${widget.saveFolder!.path}/${DateTime.now().millisecondsSinceEpoch}.mp4'
-          : '/storage/emulated/0/Pictures/MyApp/Shared/${widget.sharedFolderId}/${DateTime.now().millisecondsSinceEpoch}.mp4';
+          : '/storage/emulated/0/Pictures/MyApp/${widget.sharedFolderId}/${DateTime.now().millisecondsSinceEpoch}.mp4';
 
       final dir = File(newVideoPath).parent;
       if (!await dir.exists()) await dir.create(recursive: true);

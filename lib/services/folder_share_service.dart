@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class FolderShareService {
   static const String baseUrl =
-      "http://192.168.1.13:8000/api"; // change if needed
+      "http://192.168.1.3:8000/api"; // change if needed
 
   // Helper: get token
   Future<String?> _getToken() async {
@@ -70,8 +70,21 @@ class FolderShareService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body); // has "owned" and "shared_with_me"
+      final data = jsonDecode(response.body);
+      print("📦 Shared API Response: $data");
+
+      if (data is Map && data.containsKey('folders')) {
+        // Extract the list of folders
+        return data['folders'];
+      }
+
+      print("⚠️ Unexpected format: $data");
+    } else {
+      print(
+        "❌ getSharedWithMe failed: ${response.statusCode} ${response.body}",
+      );
     }
+
     return [];
   }
 
@@ -141,7 +154,7 @@ class FolderShareService {
       builder: (ctx) => AlertDialog(
         title: const Text("Confirm Upload"),
         content: Text(
-          "${remainingImages.length} image${remainingImages.length > 1 ? 's' : ''} will be uploaded.",
+          "${remainingImages.length} media${remainingImages.length > 1 ? 's' : ''} will be uploaded.",
         ),
         actions: [
           TextButton(
@@ -172,7 +185,7 @@ class FolderShareService {
 
     for (var file in remainingImages) {
       request.files.add(
-        await http.MultipartFile.fromPath("photos[]", file.path),
+        await http.MultipartFile.fromPath("files[]", file.path),
       );
     }
 
