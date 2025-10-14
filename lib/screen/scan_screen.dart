@@ -8,6 +8,7 @@ import 'package:cunning_document_scanner/ios_options.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ScanScreen extends StatefulWidget {
   final Directory? saveFolder;
@@ -93,7 +94,7 @@ class _ScanScreenState extends State<ScanScreen> {
       // Folder path
       final Directory baseDir = widget.sharedFolderId != null
           ? Directory(
-              '/storage/emulated/0/Pictures/MyApp/Shared/${widget.sharedFolderId}',
+              '/storage/emulated/0/Pictures/MyApp/${widget.sharedFolderId}',
             )
           : Directory(
               '/storage/emulated/0/Pictures/MyApp/${widget.userId}/${widget.folderName}',
@@ -127,7 +128,7 @@ class _ScanScreenState extends State<ScanScreen> {
       ).showSnackBar(SnackBar(content: Text("PDF saved at: $pdfPath")));
 
       // Upload PDF to server
-      await _uploadPdfToServer(file);
+      await _uploadPdfToServer(file, widget.sharedFolderId ?? 0);
 
       return file;
     } catch (e, st) {
@@ -140,15 +141,18 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  Future<void> _uploadPdfToServer(File pdfFile) async {
+  Future<void> _uploadPdfToServer(File pdfFile, int folderId) async {
     try {
       final uri = Uri.parse(
-        'https://yourapi.com/api/upload',
-      ); // <-- change this
+        'http://192.168.1.3:8000/api/shared-folders/$folderId/upload',
+      );
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString("auth_token");
 
-      final request = http.MultipartRequest('POST', uri);
+      final request = http.MultipartRequest('POST', uri)
+        ..headers['Accept'] = 'application/json'
+        ..headers['Authorization'] = 'Bearer $token'; // optional if required
 
-      // Add required fields
       if (widget.sharedFolderId != null) {
         request.fields['shared_folder_id'] = widget.sharedFolderId.toString();
       } else {
@@ -156,7 +160,6 @@ class _ScanScreenState extends State<ScanScreen> {
         request.fields['folder_name'] = widget.folderName;
       }
 
-      // Add PDF file
       request.files.add(
         await http.MultipartFile.fromPath(
           "files[]",
@@ -166,6 +169,10 @@ class _ScanScreenState extends State<ScanScreen> {
       );
 
       final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+
+      debugPrint("📦 Upload Response: ${response.statusCode}");
+      debugPrint("📄 Response Body: $responseBody");
 
       if (response.statusCode == 200) {
         debugPrint("✅ PDF uploaded successfully");
