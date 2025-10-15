@@ -112,13 +112,14 @@ class FolderShareService {
     BuildContext context,
     int folderId,
     List<File> images,
+    List<File> pdfs, // add scanned PDFs here
   ) async {
     final token = await _getToken();
     if (token == null) return false;
 
     String normalizeFileName(String path) => path.split('/').last.toLowerCase();
 
-    // Step 1: Get already uploaded photos from server
+    // Step 1: Get already uploaded files from server
     final sharedData = await getSharedFolderPhotos(folderId);
     final Set<String> uploadedBasenames = {};
 
@@ -129,32 +130,35 @@ class FolderShareService {
       }
     }
 
+    // Combine images + PDFs for checking
+    final allFiles = [...images, ...pdfs];
+
     print("Already uploaded: $uploadedBasenames");
     print(
-      "Local to upload: ${images.map((f) => normalizeFileName(f.path)).toList()}",
+      "Local to upload: ${allFiles.map((f) => normalizeFileName(f.path)).toList()}",
     );
 
-    // Step 2: Filter out already uploaded images (remaining images to upload)
-    final List<File> remainingImages = images.where((file) {
+    // Step 2: Filter out already uploaded files
+    final List<File> remainingFiles = allFiles.where((file) {
       final name = normalizeFileName(file.path);
       return !uploadedBasenames.any((uploaded) => uploaded.endsWith(name));
     }).toList();
 
-    // Step 3: Show message if nothing is left to upload
-    if (remainingImages.isEmpty) {
+    // Step 3: Show message if nothing left to upload
+    if (remainingFiles.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("No new images to upload.")));
+      ).showSnackBar(const SnackBar(content: Text("No new files to upload.")));
       return true;
     }
 
-    // Step 4: Show confirmation dialog with **only remaining images**
+    // Step 4: Show confirmation dialog
     final bool confirm = await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Confirm Upload"),
         content: Text(
-          "${remainingImages.length} media${remainingImages.length > 1 ? 's' : ''} will be uploaded.",
+          "${remainingFiles.length} file${remainingFiles.length > 1 ? 's' : ''} will be uploaded.",
         ),
         actions: [
           TextButton(
@@ -176,35 +180,36 @@ class FolderShareService {
       return false;
     }
 
-    // Step 5: Upload remaining images
-    var request = http.MultipartRequest(
+    // Step 5: Upload remaining files
+    final request = http.MultipartRequest(
       "POST",
       Uri.parse("$baseUrl/shared-folders/$folderId/upload"),
     );
     request.headers["Authorization"] = "Bearer $token";
 
-    for (var file in remainingImages) {
+    for (var file in remainingFiles) {
+      final isPdf = file.path.toLowerCase().endsWith(".pdf");
       request.files.add(
         await http.MultipartFile.fromPath("files[]", file.path),
       );
     }
 
     final response = await request.send();
+    final resStr = await response.stream.bytesToString();
 
     if (response.statusCode == 200) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            "Uploaded ${remainingImages.length} image${remainingImages.length > 1 ? 's' : ''}.",
+            "Uploaded ${remainingFiles.length} file${remainingFiles.length > 1 ? 's' : ''}.",
           ),
         ),
       );
       return true;
     } else {
-      final err = await response.stream.bytesToString();
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text("Upload failed: $err")));
+      ).showSnackBar(SnackBar(content: Text("Upload failed: $resStr")));
       return false;
     }
   }

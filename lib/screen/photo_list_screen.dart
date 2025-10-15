@@ -45,6 +45,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   List<File> imageItems = [];
   List<File> pdfFiles = [];
   List<Map<String, dynamic>> apiPhotos = [];
+  List<Map<String, dynamic>> apiPdfFiles = [];
   bool isSearching = false;
   String searchQuery = '';
   List<Directory> filteredFolders = [];
@@ -117,7 +118,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     // Merge newly taken + server photos
     final allPhotos = [...filteredNewPhotos, ...serverPhotos];
 
-    // Deduplicate by filename to avoid duplicates
+    // Deduplicate by filename to avoid duplicates, prefer local
     final uniquePhotos = <String, Map<String, dynamic>>{};
     for (var photo in allPhotos) {
       final filename = photo['path'].split('/').last.toLowerCase();
@@ -126,8 +127,24 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       }
     }
 
+    // Split into apiPhotos (images/videos) and apiPdfFiles (pdfs)
+    final tempList = uniquePhotos.values.toList();
+    final imagesAndVideos = <Map<String, dynamic>>[];
+    final pdfs = <Map<String, dynamic>>[];
+
+    for (var p in tempList) {
+      final path = p['path'] as String;
+      final ext = path.split('.').last.toLowerCase();
+      if (ext == 'pdf') {
+        pdfs.add(p);
+      } else {
+        imagesAndVideos.add(p);
+      }
+    }
+
     setState(() {
-      apiPhotos = uniquePhotos.values.toList();
+      apiPhotos = imagesAndVideos;
+      apiPdfFiles = pdfs;
     });
   }
 
@@ -323,6 +340,81 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (_) => PdfViewerScreen(pdfFile: pdfFile),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPdfGridCards(List<dynamic> pdfFiles) {
+    if (pdfFiles.isEmpty) {
+      return const Center(
+        child: Text("No PDFs found", style: TextStyle(color: Colors.white70)),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: pdfFiles.length,
+      itemBuilder: (context, index) {
+        final pdf = pdfFiles[index];
+        final pdfName = pdf is File
+            ? pdf.path.split('/').last
+            : pdf['name'] ?? pdf['path'].split('/').last;
+        final pdfPath = pdf is File ? pdf.path : pdf['url'] ?? pdf['path'];
+
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 4,
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 12,
+              horizontal: 16,
+            ),
+            leading: const Icon(
+              Icons.picture_as_pdf,
+              size: 40,
+              color: Colors.redAccent,
+            ),
+            title: Text(
+              pdfName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit_note, color: Colors.blueAccent),
+                  onPressed: pdf is File ? () => _renamePdf(pdf) : null,
+                ),
+                // IconButton(
+                //   icon: const Icon(Icons.delete, color: Colors.redAccent),
+                //   onPressed: pdf is File
+                //       ? () async {
+                //           await pdf.delete();
+                //           setState(() => pdfFiles.remove(pdf));
+                //         }
+                //       : null,
+                // ),
+              ],
+            ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PdfViewerScreen(
+                    pdfFile: pdf is File ? pdf : File(pdfPath),
+                  ),
                 ),
               );
             },
@@ -820,12 +912,14 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
                   // --- PDF Page ---
                   widget.isShared
-                      ? Center(
-                          child: Text(
-                            "PDF view not supported for shared folder",
-                            style: textTheme.bodyMedium,
-                          ),
-                        )
+                      ? (apiPdfFiles.isEmpty
+                            ? Center(
+                                child: Text(
+                                  "No PDFs yet in shared folder",
+                                  style: textTheme.bodyMedium,
+                                ),
+                              )
+                            : _buildPdfGridCards(apiPdfFiles))
                       : _buildPdfListCards(pdfFiles),
                 ],
               ),
@@ -846,7 +940,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               showCamera: true,
               scanDisabled: false,
               onCreateFolder: (int index) {
-                if (index == 3) _showCreateSubFolderDialog();
+                if (index == 4) _showCreateSubFolderDialog();
               },
               onCameraTap: _takePhoto,
               onScanTap: () async {
@@ -860,15 +954,20 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
                   if (!await dir.exists()) return;
 
-                  final uploadFiles = <File>[];
+                  final uploadImages = <File>[];
+                  final uploadPdfs = <File>[];
+
                   for (var entity in dir.listSync(recursive: true)) {
-                    if (entity is File &&
-                        (isMedia(entity.path) || isPdf(entity.path))) {
-                      uploadFiles.add(entity);
+                    if (entity is File) {
+                      if (isMedia(entity.path)) {
+                        uploadImages.add(entity);
+                      } else if (isPdf(entity.path)) {
+                        uploadPdfs.add(entity);
+                      }
                     }
                   }
 
-                  if (uploadFiles.isEmpty) {
+                  if (uploadImages.isEmpty && uploadPdfs.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text("No images or PDFs found to upload"),
@@ -881,11 +980,12 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   final success = await service.uploadToSharedFolder(
                     context,
                     widget.sharedFolderId!,
-                    uploadFiles, // now includes PDFs too
+                    uploadImages, // only images
+                    uploadPdfs, // only PDFs
                   );
 
                   if (success) {
-                    for (var file in uploadFiles) {
+                    for (var file in [...uploadImages, ...uploadPdfs]) {
                       final index = _newlyTakenPhotos.indexWhere(
                         (p) => p['path'] == file.path,
                       );
@@ -932,10 +1032,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           );
         }).toList();
 
-        for (var p in filteredPhotos) {
-          print("Photo path: ${p['path']}");
-        }
-
         // Step 2: Remove duplicate filenames, prefer local copies
         final Map<String, Map<String, dynamic>> uniquePhotos = {};
         for (var p in filteredPhotos) {
@@ -945,19 +1041,17 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           }
         }
 
-        // Step 3: Final list to display
         final displayedPhotos = uniquePhotos.values.toList();
 
         if (displayedPhotos.isEmpty) {
           return Center(
             child: Text(
-              "No images yet in shared folder",
+              "No files yet in shared folder",
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           );
         }
 
-        // Step 4: Build Grid
         return GridView.builder(
           padding: const EdgeInsets.all(8),
           itemCount: displayedPhotos.length,
@@ -975,6 +1069,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             final filename = localPath.split('/').last;
             final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
             final isSelected = selectedImages.contains(localPath);
+
+            // Detect file type
+            final ext = localPath.split('.').last.toLowerCase();
+            final isPdf = ext == 'pdf';
+            final isVideoFile = isVideo(localPath);
 
             return GestureDetector(
               onLongPress: () {
@@ -995,17 +1094,40 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     }
                   });
                 } else {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => GalleryScreen(
-                        images: displayedPhotos
-                            .map((p) => File(p['path']))
-                            .toList(),
-                        startIndex: index,
+                  if (isPdf) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            PdfViewerScreen(pdfFile: File(localPath)),
                       ),
-                    ),
-                  );
+                    );
+                  } else if (isVideoFile) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            VideoPlayerScreen(videoFile: File(localPath)),
+                      ),
+                    );
+                  } else {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => GalleryScreen(
+                          images: displayedPhotos
+                              .where(
+                                (p) =>
+                                    !p['path'].toLowerCase().endsWith('.pdf') &&
+                                    !isVideo(p['path']),
+                              )
+                              .map((p) => File(p['path']))
+                              .toList(),
+                          startIndex: index,
+                        ),
+                      ),
+                    );
+                  }
                 }
               },
               child: Stack(
@@ -1013,7 +1135,18 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   Positioned.fill(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: isVideo(localPath)
+                      child: isPdf
+                          ? Container(
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: Icon(
+                                  Icons.picture_as_pdf,
+                                  size: 40,
+                                  color: Colors.red,
+                                ),
+                              ),
+                            )
+                          : isVideoFile
                           ? Stack(
                               fit: StackFit.expand,
                               children: [
@@ -1080,89 +1213,31 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                         ),
                       ),
                     ),
+                  // PDF rename button
+                  if (isPdf)
+                    Positioned(
+                      right: 6,
+                      bottom: 6,
+                      child: GestureDetector(
+                        onTap: () => _renamePdf(File(localPath)),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.blueAccent,
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(4),
+                          child: const Icon(
+                            Icons.edit_note,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             );
           },
-        );
-      },
-    );
-  }
-
-  Widget _buildFolderListCards(List<Directory> folders) {
-    if (folders.isEmpty) {
-      return const Center(
-        child: Text("No folders yet", style: TextStyle(color: Colors.white70)),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: folders.length,
-      itemBuilder: (context, index) {
-        final folder = folders[index];
-        final folderName = folder.path.split('/').last;
-
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 4,
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 12,
-              horizontal: 16,
-            ),
-            leading: const Icon(Icons.folder, size: 40, color: Colors.orange),
-            title: Text(
-              folderName,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            subtitle: FutureBuilder<Map<String, int>>(
-              future: _countSingleFolder(folder), // Custom method below
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Text('Loading...');
-                }
-                final subfolderCount = snapshot.data?['subfolders'] ?? 0;
-                final imageCount = snapshot.data?['images'] ?? 0;
-
-                return Text(
-                  'Subfolders: $subfolderCount\n'
-                  'Images: $imageCount    Videos: ${snapshot.data?['videos'] ?? 0}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                );
-              },
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit, color: Colors.blueAccent),
-                  onPressed: () => _renameFolder(folder),
-                ),
-                // IconButton(
-                //   icon: const Icon(Icons.delete, color: Colors.redAccent),
-                //   onPressed: () => _deleteFolder(folder),
-                // ),
-              ],
-            ),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PhotoListScreen(
-                    folder: folder,
-                    userId: widget.userId,
-                    selectedFolder: widget.selectedFolder,
-                  ),
-                ),
-              );
-            },
-          ),
         );
       },
     );
@@ -1324,6 +1399,85 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _buildFolderListCards(List<Directory> folders) {
+    if (folders.isEmpty) {
+      return const Center(
+        child: Text("No folders yet", style: TextStyle(color: Colors.white70)),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: folders.length,
+      itemBuilder: (context, index) {
+        final folder = folders[index];
+        final folderName = folder.path.split('/').last;
+
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 4,
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 12,
+              horizontal: 16,
+            ),
+            leading: const Icon(Icons.folder, size: 40, color: Colors.orange),
+            title: Text(
+              folderName,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            subtitle: FutureBuilder<Map<String, int>>(
+              future: _countSingleFolder(folder), // Custom method below
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Text('Loading...');
+                }
+                final subfolderCount = snapshot.data?['subfolders'] ?? 0;
+                final imageCount = snapshot.data?['images'] ?? 0;
+
+                return Text(
+                  'Subfolders: $subfolderCount\n'
+                  'Images: $imageCount    Videos: ${snapshot.data?['videos'] ?? 0}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                );
+              },
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit, color: Colors.blueAccent),
+                  onPressed: () => _renameFolder(folder),
+                ),
+                // IconButton(
+                //   icon: const Icon(Icons.delete, color: Colors.redAccent),
+                //   onPressed: () => _deleteFolder(folder),
+                // ),
+              ],
+            ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PhotoListScreen(
+                    folder: folder,
+                    userId: widget.userId,
+                    selectedFolder: widget.selectedFolder,
+                  ),
+                ),
+              );
+            },
+          ),
         );
       },
     );

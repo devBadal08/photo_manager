@@ -128,7 +128,7 @@ class _ScanScreenState extends State<ScanScreen> {
       ).showSnackBar(SnackBar(content: Text("PDF saved at: $pdfPath")));
 
       // Upload PDF to server
-      await _uploadPdfToServer(file, widget.sharedFolderId ?? 0);
+      //await _uploadPdfToServer(file, widget.sharedFolderId ?? 0);
 
       return file;
     } catch (e, st) {
@@ -141,59 +141,59 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  Future<void> _uploadPdfToServer(File pdfFile, int folderId) async {
-    try {
-      final uri = Uri.parse(
-        'http://192.168.1.3:8000/api/shared-folders/$folderId/upload',
-      );
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString("auth_token");
+  // Future<void> _uploadPdfToServer(File pdfFile, int folderId) async {
+  //   try {
+  //     final uri = Uri.parse(
+  //       'http://192.168.1.3:8000/api/shared-folders/$folderId/upload',
+  //     );
+  //     final prefs = await SharedPreferences.getInstance();
+  //     final token = prefs.getString("auth_token");
 
-      final request = http.MultipartRequest('POST', uri)
-        ..headers['Accept'] = 'application/json'
-        ..headers['Authorization'] = 'Bearer $token'; // optional if required
+  //     final request = http.MultipartRequest('POST', uri)
+  //       ..headers['Accept'] = 'application/json'
+  //       ..headers['Authorization'] = 'Bearer $token'; // optional if required
 
-      if (widget.sharedFolderId != null) {
-        request.fields['shared_folder_id'] = widget.sharedFolderId.toString();
-      } else {
-        request.fields['user_id'] = widget.userId;
-        request.fields['folder_name'] = widget.folderName;
-      }
+  //     if (widget.sharedFolderId != null) {
+  //       request.fields['shared_folder_id'] = widget.sharedFolderId.toString();
+  //     } else {
+  //       request.fields['user_id'] = widget.userId;
+  //       request.fields['folder_name'] = widget.folderName;
+  //     }
 
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          "files[]",
-          pdfFile.path,
-          contentType: MediaType('application', 'pdf'),
-        ),
-      );
+  //     request.files.add(
+  //       await http.MultipartFile.fromPath(
+  //         "files[]",
+  //         pdfFile.path,
+  //         contentType: MediaType('application', 'pdf'),
+  //       ),
+  //     );
 
-      final response = await request.send();
-      final responseBody = await response.stream.bytesToString();
+  //     final response = await request.send();
+  //     final responseBody = await response.stream.bytesToString();
 
-      debugPrint("📦 Upload Response: ${response.statusCode}");
-      debugPrint("📄 Response Body: $responseBody");
+  //     debugPrint("📦 Upload Response: ${response.statusCode}");
+  //     debugPrint("📄 Response Body: $responseBody");
 
-      if (response.statusCode == 200) {
-        debugPrint("✅ PDF uploaded successfully");
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("PDF uploaded successfully")),
-        );
-      } else {
-        debugPrint("❌ PDF upload failed: ${response.statusCode}");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Failed to upload PDF (${response.statusCode})"),
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint("PDF upload error: $e");
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Error uploading PDF")));
-    }
-  }
+  //     if (response.statusCode == 200) {
+  //       debugPrint("✅ PDF uploaded successfully");
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         const SnackBar(content: Text("PDF uploaded successfully")),
+  //       );
+  //     } else {
+  //       debugPrint("❌ PDF upload failed: ${response.statusCode}");
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(
+  //           content: Text("Failed to upload PDF (${response.statusCode})"),
+  //         ),
+  //       );
+  //     }
+  //   } catch (e) {
+  //     debugPrint("PDF upload error: $e");
+  //     ScaffoldMessenger.of(
+  //       context,
+  //     ).showSnackBar(const SnackBar(content: Text("Error uploading PDF")));
+  //   }
+  // }
 
   void _openPdf() {
     if (pdfFile != null) OpenFile.open(pdfFile!.path);
