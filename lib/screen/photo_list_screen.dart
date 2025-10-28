@@ -366,6 +366,18 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             : pdf['name'] ?? pdf['path'].split('/').last;
         final pdfPath = pdf is File ? pdf.path : pdf['url'] ?? pdf['path'];
 
+        // Detect whether it's a shared (server) PDF or a local file
+        final bool isShared =
+            pdf is Map &&
+            ((pdf['url'] != null &&
+                    (pdf['url'] as String).startsWith('http')) ||
+                !(pdfPath.toString().startsWith('/storage')));
+
+        // Build correct URL if shared
+        final String? pdfUrl = isShared
+            ? (pdf['url'] ?? "http://192.168.1.10:8000/storage/${pdf['path']}")
+            : null;
+
         return Card(
           margin: const EdgeInsets.symmetric(vertical: 8),
           shape: RoundedRectangleBorder(
@@ -397,23 +409,17 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   icon: const Icon(Icons.edit_note, color: Colors.blueAccent),
                   onPressed: pdf is File ? () => _renamePdf(pdf) : null,
                 ),
-                // IconButton(
-                //   icon: const Icon(Icons.delete, color: Colors.redAccent),
-                //   onPressed: pdf is File
-                //       ? () async {
-                //           await pdf.delete();
-                //           setState(() => pdfFiles.remove(pdf));
-                //         }
-                //       : null,
-                // ),
               ],
             ),
             onTap: () {
+              print("📄 Opening PDF: $pdfName");
+              print("🧠 isShared=$isShared | pdfPath=$pdfPath");
+
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => PdfViewerScreen(
-                    pdfFile: pdf is File ? pdf : File(pdfPath),
+                    pdfFile: isShared ? pdfUrl! : File(pdfPath),
                   ),
                 ),
               );
@@ -1021,9 +1027,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   }
 
   Widget _buildApiImageGrid(List<Map<String, dynamic>> photos) {
+    print("🔍 Initial photos received: ${photos.length}");
     return ValueListenableBuilder<Set<String>>(
       valueListenable: PhotoService.uploadedFiles,
       builder: (context, uploadedSet, _) {
+        print("📦 Uploaded files (count: ${uploadedSet.length})");
         // Step 1: Remove uploaded photos
         final filteredPhotos = photos.where((p) {
           final filename = p['path'].split('/').last.toLowerCase();
@@ -1065,7 +1073,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             final isLocal = photo['local'] == true;
             final localPath = photo['path'];
             final serverPath =
-                "http://192.168.1.3:8000/storage/${photo['path']}";
+                "http://192.168.1.10:8000/storage/${photo['path']}";
             final filename = localPath.split('/').last;
             final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
             final isSelected = selectedImages.contains(localPath);
@@ -1085,6 +1093,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 });
               },
               onTap: () {
+                print("👆 Tapped: $filename | selectionMode: $selectionMode");
                 if (selectionMode) {
                   setState(() {
                     if (isSelected) {
@@ -1095,13 +1104,45 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   });
                 } else {
                   if (isPdf) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            PdfViewerScreen(pdfFile: File(localPath)),
-                      ),
+                    final isShared = widget.sharedFolderId != null;
+                    final fileName = localPath.split('/').last;
+                    print(
+                      "📄 Opening PDF -> Shared: $isShared | File: $fileName",
                     );
+
+                    if (isShared) {
+                      // 🟩 OPEN PDF DIRECTLY FROM SERVER (not local)
+                      final pdfUrl =
+                          "http://192.168.1.10:8000/storage/${photo['path']}";
+                      print("🌐 Opening shared PDF from server: $pdfUrl");
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PdfViewerScreen(
+                            pdfFile: pdfUrl,
+                            sharedFolderId: widget.sharedFolderId,
+                          ),
+                        ),
+                      );
+
+                      // You’ll modify PdfViewerScreen to accept URLs (next step)
+                    } else {
+                      final fullPath =
+                          '/storage/emulated/0/Pictures/MyApp/${widget.userId}/${widget.folder}/$fileName';
+                      final exists = File(fullPath).existsSync();
+                      print("📂 Local PDF path: $fullPath | Exists: $exists");
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PdfViewerScreen(
+                            pdfFile: File(fullPath),
+                            sharedFolderId: widget.sharedFolderId,
+                          ),
+                        ),
+                      );
+                    }
                   } else if (isVideoFile) {
                     Navigator.push(
                       context,

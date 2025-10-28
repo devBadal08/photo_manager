@@ -41,7 +41,7 @@ class PhotoService {
     required String folderName,
     required String token,
   }) async {
-    final url = Uri.parse('http://192.168.1.3:8000/api/photos/uploadAll');
+    final url = Uri.parse('http://192.168.1.10:8000/api/photos/uploadAll');
 
     try {
       final request = http.MultipartRequest('POST', url)
@@ -356,7 +356,7 @@ class PhotoService {
 
         final request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://192.168.1.3:8000/api/photos/uploadAll'),
+          Uri.parse('http://192.168.1.10:8000/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 

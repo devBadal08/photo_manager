@@ -90,7 +90,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
     setState(() => _isCapturing = true);
     try {
-      await _audioPlayer.play(AssetSource('sounds/camera_sound2.mp3'));
+      await _audioPlayer.play(AssetSource('sounds/camera_sound3.mp3'));
       final XFile image = await _controller.takePicture();
       File compressedFile = await PhotoService.compressImage(File(image.path));
 
