@@ -44,7 +44,7 @@ class _ScanScreenState extends State<ScanScreen> {
   Future<void> _startScan() async {
     try {
       final imagePaths = await CunningDocumentScanner.getPictures(
-        noOfPages: 10,
+        noOfPages: 50,
         isGalleryImportAllowed: false,
         iosScannerOptions: const IosScannerOptions(
           imageFormat: IosImageFormat.jpg,
