@@ -15,6 +15,7 @@ class ScanScreen extends StatefulWidget {
   final String userId;
   final String folderName;
   final int? sharedFolderId;
+  final String? currentFolderPath; // ✅ new parameter for exact folder path
   final void Function(File pdfFile)? onPdfCreated;
 
   const ScanScreen({
@@ -24,6 +25,7 @@ class ScanScreen extends StatefulWidget {
     required this.folderName,
     this.sharedFolderId,
     this.onPdfCreated,
+    this.currentFolderPath, // ✅ added
   }) : super(key: key);
 
   @override
@@ -91,16 +93,27 @@ class _ScanScreenState extends State<ScanScreen> {
         }
       }
 
-      // Folder path
-      final Directory baseDir = widget.sharedFolderId != null
-          ? Directory(
-              '/storage/emulated/0/Pictures/MyApp/${widget.sharedFolderId}',
-            )
-          : Directory(
-              '/storage/emulated/0/Pictures/MyApp/${widget.userId}/${widget.folderName}',
-            );
+      // ✅ Determine the correct folder path
+      final Directory baseDir;
 
-      if (!await baseDir.exists()) await baseDir.create(recursive: true);
+      if (widget.currentFolderPath != null &&
+          widget.currentFolderPath!.isNotEmpty) {
+        // Use the *exact* subfolder the user is currently inside
+        baseDir = Directory(widget.currentFolderPath!);
+      } else if (widget.saveFolder != null) {
+        // If saveFolder is passed, use that
+        baseDir = widget.saveFolder!;
+      } else {
+        // Fallback to user folder
+        baseDir = Directory(
+          '/storage/emulated/0/Pictures/MyApp/${widget.userId}/${widget.folderName}',
+        );
+      }
+
+      // ✅ Ensure directory exists
+      if (!await baseDir.exists()) {
+        await baseDir.create(recursive: true);
+      }
 
       // Create PDF
       final pdf = pw.Document();
@@ -109,8 +122,8 @@ class _ScanScreenState extends State<ScanScreen> {
         pdf.addPage(
           pw.Page(
             pageFormat: PdfPageFormat.a4,
-            build: (_) =>
-                pw.Center(child: pw.Image(image, fit: pw.BoxFit.contain)),
+            margin: pw.EdgeInsets.zero,
+            build: (_) => pw.Image(image, fit: pw.BoxFit.contain),
           ),
         );
       }
@@ -127,8 +140,8 @@ class _ScanScreenState extends State<ScanScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text("PDF saved at: $pdfPath")));
 
-      // Upload PDF to server
-      //await _uploadPdfToServer(file, widget.sharedFolderId ?? 0);
+      // Optionally upload PDF
+      // await _uploadPdfToServer(file, widget.sharedFolderId ?? 0);
 
       return file;
     } catch (e, st) {
@@ -140,60 +153,6 @@ class _ScanScreenState extends State<ScanScreen> {
       return null;
     }
   }
-
-  // Future<void> _uploadPdfToServer(File pdfFile, int folderId) async {
-  //   try {
-  //     final uri = Uri.parse(
-  //       'http://192.168.1.3:8000/api/shared-folders/$folderId/upload',
-  //     );
-  //     final prefs = await SharedPreferences.getInstance();
-  //     final token = prefs.getString("auth_token");
-
-  //     final request = http.MultipartRequest('POST', uri)
-  //       ..headers['Accept'] = 'application/json'
-  //       ..headers['Authorization'] = 'Bearer $token'; // optional if required
-
-  //     if (widget.sharedFolderId != null) {
-  //       request.fields['shared_folder_id'] = widget.sharedFolderId.toString();
-  //     } else {
-  //       request.fields['user_id'] = widget.userId;
-  //       request.fields['folder_name'] = widget.folderName;
-  //     }
-
-  //     request.files.add(
-  //       await http.MultipartFile.fromPath(
-  //         "files[]",
-  //         pdfFile.path,
-  //         contentType: MediaType('application', 'pdf'),
-  //       ),
-  //     );
-
-  //     final response = await request.send();
-  //     final responseBody = await response.stream.bytesToString();
-
-  //     debugPrint("📦 Upload Response: ${response.statusCode}");
-  //     debugPrint("📄 Response Body: $responseBody");
-
-  //     if (response.statusCode == 200) {
-  //       debugPrint("✅ PDF uploaded successfully");
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         const SnackBar(content: Text("PDF uploaded successfully")),
-  //       );
-  //     } else {
-  //       debugPrint("❌ PDF upload failed: ${response.statusCode}");
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(
-  //           content: Text("Failed to upload PDF (${response.statusCode})"),
-  //         ),
-  //       );
-  //     }
-  //   } catch (e) {
-  //     debugPrint("PDF upload error: $e");
-  //     ScaffoldMessenger.of(
-  //       context,
-  //     ).showSnackBar(const SnackBar(content: Text("Error uploading PDF")));
-  //   }
-  // }
 
   void _openPdf() {
     if (pdfFile != null) OpenFile.open(pdfFile!.path);
