@@ -56,7 +56,6 @@ dependencies:
   video_compress: ^3.1.0
   syncfusion_flutter_pdfviewer: ^28.1.37
   audioplayers: ^6.5.1
-  
 
 flutter_icons:
   android: true

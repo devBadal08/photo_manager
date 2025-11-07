@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:http/http.dart' as http;
 import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
@@ -34,6 +36,8 @@ class _FolderScreenState extends State<FolderScreen>
   int totalImages = 0;
   int videoCount = 0;
   int pdfCount = 0;
+  bool isStorageNearLimit = false;
+  String storageMessage = '';
 
   // late final StreamSubscription _statusCheckSub;
   Directory? selectedFolder;
@@ -45,6 +49,10 @@ class _FolderScreenState extends State<FolderScreen>
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
     _loadInitialData();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkCompanyStorageUsage();
+    });
   }
 
   Future<void> _loadInitialData() async {
@@ -87,6 +95,39 @@ class _FolderScreenState extends State<FolderScreen>
       videoCount = result['videos'] ?? 0;
       pdfCount = result['pdfs'] ?? 0;
     });
+  }
+
+  Future<void> _checkCompanyStorageUsage() async {
+    try {
+      final url = Uri.parse('http://192.168.1.10:8000/api/storage-usage');
+      final token = await folderService.getAuthToken();
+
+      if (token == null || token.isEmpty) return;
+
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (!mounted) return;
+        setState(() {
+          isStorageNearLimit = data['is_near_limit'] ?? false;
+          storageMessage =
+              data['message'] ??
+              '✅ Company storage usage is within safe limits.';
+        });
+      } else {
+        debugPrint("Storage check failed: ${response.statusCode}");
+      }
+    } catch (e) {
+      debugPrint("Error checking storage: $e");
+    }
   }
 
   Future<void> _loadFolders() async {
@@ -439,22 +480,51 @@ class _FolderScreenState extends State<FolderScreen>
         centerTitle: true,
       ),
       drawer: null,
-      body: TabBarView(
-        controller: _tabController,
-        physics: const NeverScrollableScrollPhysics(),
+      body: Column(
         children: [
-          _buildFolderGrid(),
-          folders.isNotEmpty
-              ? ScanScreen(
-                  userId: widget.userId,
-                  folderName: folders.first.path.split('/').last,
-                )
-              : const Center(child: Text("No folder selected")),
-          const SizedBox(),
-          const SizedBox(),
-          const SizedBox(),
+          // 🔹 Always-visible storage banner
+          if (isStorageNearLimit)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              width: double.infinity,
+              color: Colors.orange.shade300,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+              child: Row(
+                children: const [
+                  Icon(Icons.warning_amber_rounded, color: Colors.white),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Warning: You are close to your storage limit!',
+                      style: TextStyle(color: Colors.white, fontSize: 15),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // 🔹 Main content below banner
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _buildFolderGrid(),
+                folders.isNotEmpty
+                    ? ScanScreen(
+                        userId: widget.userId,
+                        folderName: folders.first.path.split('/').last,
+                      )
+                    : const Center(child: Text("No folder selected")),
+                const SizedBox(),
+                const SizedBox(),
+                const SizedBox(),
+              ],
+            ),
+          ),
         ],
       ),
+
       bottomNavigationBar: SafeArea(
         child: BottomTabs(
           controller: _tabController,

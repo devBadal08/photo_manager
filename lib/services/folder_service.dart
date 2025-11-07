@@ -133,6 +133,12 @@ class FolderService {
     return null;
   }
 
+  Future<String?> getAuthToken() async {
+    // Example using SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token');
+  }
+
   void showCameraDisabledMessage(BuildContext context) {
     ScaffoldMessenger.of(
       context,
