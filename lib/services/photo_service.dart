@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -41,7 +42,7 @@ class PhotoService {
     required String folderName,
     required String token,
   }) async {
-    final url = Uri.parse('http://192.168.1.10:8000/api/photos/uploadAll');
+    final url = Uri.parse('http://192.168.1.5:8000/api/photos/uploadAll');
 
     try {
       final request = http.MultipartRequest('POST', url)
@@ -344,6 +345,78 @@ class PhotoService {
     }
 
     try {
+      // ✅ STEP 1: Check storage usage BEFORE showing loader
+      final checkUrl = Uri.parse('http://192.168.1.5:8000/api/storage-usage');
+      final checkResponse = await http.get(
+        checkUrl,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (checkResponse.statusCode == 200) {
+        final data = jsonDecode(checkResponse.body);
+        final used = data['used_storage_mb'] ?? 0;
+        final max = data['max_storage_mb'] ?? 0;
+        final percent = data['percent_used'] ?? 0;
+        debugPrint("📦 Storage: $used / $max MB used ($percent%)");
+
+        if (max > 0) {
+          final percent = (used / max) * 100;
+
+          if (percent >= 99.5 && percent <= 100) {
+            // 🚫 Almost full (block upload)
+            if (context != null && context.mounted) {
+              await showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text("⚠️ Storage Almost Full"),
+                  content: Text(
+                    "You have used ${percent.toStringAsFixed(2)}% of your storage.\n"
+                    "Uploads are disabled until you free up space or contact admin.",
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text("OK"),
+                    ),
+                  ],
+                ),
+              );
+            }
+            return; // stop here
+          }
+
+          if (percent > 100) {
+            // ❌ Completely full
+            if (context != null && context.mounted) {
+              await showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text("❌ Storage Limit Exceeded"),
+                  content: Text(
+                    "Your storage limit is exceeded.\n"
+                    "Please contact admin to increase your storage",
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text("OK"),
+                    ),
+                  ],
+                ),
+              );
+            }
+            return;
+          }
+        }
+      } else {
+        debugPrint(
+          "⚠️ Failed to check storage usage (${checkResponse.statusCode})",
+        );
+      }
+
       const batchSize = 10;
       bool allSuccess = true;
 
@@ -356,7 +429,7 @@ class PhotoService {
 
         final request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://192.168.1.10:8000/api/photos/uploadAll'),
+          Uri.parse('http://192.168.1.5:8000/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 
@@ -364,9 +437,7 @@ class PhotoService {
           final file = batch[i].key;
           final folder = batch[i].value;
 
-          // Backend expects folders[0], folders[1], ... for all files
           request.fields['folders[$i]'] = folder;
-
           request.files.add(
             await http.MultipartFile.fromPath('$type[$i]', file.path),
           );
@@ -376,6 +447,7 @@ class PhotoService {
         final resStr = await response.stream.bytesToString();
 
         if (response.statusCode == 200) {
+          // ✅ Upload success
           for (final entry in batch) {
             PhotoService.uploadedFiles.value.add(entry.key.absolute.path);
           }
@@ -383,6 +455,35 @@ class PhotoService {
           await PhotoService.saveUploadedFiles();
           uploadedCount.value += batch.length;
           return true;
+        } else if (response.statusCode == 403) {
+          // 🚫 Laravel says storage full
+          final data = jsonDecode(resStr);
+          final errorMsg = data['error'] ?? 'Storage limit reached.';
+
+          debugPrint("🚫 Upload blocked: $errorMsg");
+
+          if (context != null && context.mounted) {
+            // ✅ Close progress dialog instantly
+            if (Navigator.canPop(context)) Navigator.pop(context);
+
+            // ✅ Show clean alert dialog instead of snackbar
+            await showDialog(
+              context: context,
+              builder: (_) => AlertDialog(
+                title: const Text("Storage Limit Reached ⚠️"),
+                content: Text(errorMsg, style: const TextStyle(fontSize: 16)),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("OK"),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          // ❌ Stop all further uploads
+          throw Exception('Storage full');
         } else {
           debugPrint("Batch upload failed ($type): $resStr");
           return false;
@@ -440,13 +541,22 @@ class PhotoService {
         );
       }
     } catch (e) {
+      debugPrint("🔥 Exception during upload: $e");
+
       if (!silent && context != null && context.mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Upload failed")));
+        if (Navigator.canPop(context)) Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e.toString().contains('Storage full')
+                  ? '❌ Upload blocked: your storage limit is full.'
+                  : 'Upload failed. Please try again.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
-      debugPrint("❌ Upload error: $e");
+      print("❌ Upload error: $e");
     }
   }
 

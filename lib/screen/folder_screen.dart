@@ -38,6 +38,7 @@ class _FolderScreenState extends State<FolderScreen>
   int pdfCount = 0;
   bool isStorageNearLimit = false;
   String storageMessage = '';
+  double percentUsed = 0.0;
 
   // late final StreamSubscription _statusCheckSub;
   Directory? selectedFolder;
@@ -99,7 +100,7 @@ class _FolderScreenState extends State<FolderScreen>
 
   Future<void> _checkCompanyStorageUsage() async {
     try {
-      final url = Uri.parse('http://192.168.1.10:8000/api/storage-usage');
+      final url = Uri.parse('http://192.168.1.5:8000/api/storage-usage');
       final token = await folderService.getAuthToken();
 
       if (token == null || token.isEmpty) return;
@@ -115,18 +116,29 @@ class _FolderScreenState extends State<FolderScreen>
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
 
+        var percentUsed = (data['percent_used'] ?? 0).toDouble();
+        final usedMB = (data['used_storage_mb'] ?? 0).toDouble();
+        final maxMB = (data['max_storage_mb'] ?? 0).toDouble();
+
         if (!mounted) return;
         setState(() {
-          isStorageNearLimit = data['is_near_limit'] ?? false;
-          storageMessage =
-              data['message'] ??
-              '✅ Company storage usage is within safe limits.';
+          percentUsed = (data['percent_used'] ?? 0).toDouble();
+          isStorageNearLimit = percentUsed >= 85; // Show banner from 85% onward
+          storageMessage = percentUsed >= 99.5
+              ? "Storage full! Please contact admin or delete files."
+              : percentUsed >= 85
+              ? "Warning: You are close to your storage limit!"
+              : "";
         });
+
+        debugPrint(
+          "Used: $usedMB MB / $maxMB MB  (${percentUsed.toStringAsFixed(2)}%)",
+        );
       } else {
         debugPrint("Storage check failed: ${response.statusCode}");
       }
     } catch (e) {
-      debugPrint("Error checking storage: $e");
+      debugPrint("❌ Error checking storage: $e");
     }
   }
 
@@ -325,7 +337,7 @@ class _FolderScreenState extends State<FolderScreen>
                           return;
                         }
 
-                        // 📌 Get folder ID from server
+                        // Get folder ID from server
                         final folderId = await FolderShareService.getFolderId(
                           folder,
                         );
@@ -484,26 +496,43 @@ class _FolderScreenState extends State<FolderScreen>
         children: [
           // 🔹 Always-visible storage banner
           if (isStorageNearLimit)
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 400),
-              width: double.infinity,
-              color: Colors.orange.shade300,
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-              child: Row(
-                children: const [
-                  Icon(Icons.warning_amber_rounded, color: Colors.white),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Warning: You are close to your storage limit!',
-                      style: TextStyle(color: Colors.white, fontSize: 15),
+            if (isStorageNearLimit)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 400),
+                width: double.infinity,
+                color: percentUsed >= 99.5
+                    ? Colors
+                          .red
+                          .shade400 // Full storage
+                    : Colors.orange.shade400, // Near full
+                padding: const EdgeInsets.symmetric(
+                  vertical: 10,
+                  horizontal: 16,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      percentUsed >= 99.5
+                          ? Icons.error_outline
+                          : Icons.warning_amber_rounded,
+                      color: Colors.white,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        storageMessage,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
 
-          // 🔹 Main content below banner
+          // Main content below banner
           Expanded(
             child: TabBarView(
               controller: _tabController,
