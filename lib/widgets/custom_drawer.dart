@@ -80,7 +80,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
         if (logo.startsWith("http")) {
           _companyLogo = logo; // full URL
         } else {
-          _companyLogo = "http://192.168.1.5:8000/storage/company-logos/$logo";
+          _companyLogo = "https://techstrota.cloud/storage/company-logos/$logo";
         }
       }
     });

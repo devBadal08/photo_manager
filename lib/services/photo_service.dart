@@ -42,7 +42,7 @@ class PhotoService {
     required String folderName,
     required String token,
   }) async {
-    final url = Uri.parse('http://192.168.1.5:8000/api/photos/uploadAll');
+    final url = Uri.parse('https://techstrota.cloud/api/photos/uploadAll');
 
     try {
       final request = http.MultipartRequest('POST', url)
@@ -346,7 +346,7 @@ class PhotoService {
 
     try {
       // ✅ STEP 1: Check storage usage BEFORE showing loader
-      final checkUrl = Uri.parse('http://192.168.1.5:8000/api/storage-usage');
+      final checkUrl = Uri.parse('https://techstrota.cloud/api/storage-usage');
       final checkResponse = await http.get(
         checkUrl,
         headers: {
@@ -429,7 +429,7 @@ class PhotoService {
 
         final request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://192.168.1.5:8000/api/photos/uploadAll'),
+          Uri.parse('https://techstrota.cloud/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 

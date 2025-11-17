@@ -375,7 +375,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
         // Build correct URL if shared
         final String? pdfUrl = isShared
-            ? (pdf['url'] ?? "http://192.168.1.5:8000/storage/${pdf['path']}")
+            ? (pdf['url'] ?? "https://techstrota.cloud/storage/${pdf['path']}")
             : null;
 
         return Card(
@@ -1072,8 +1072,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             final photo = displayedPhotos[index];
             final isLocal = photo['local'] == true;
             final localPath = photo['path'];
-            final serverPath =
-                "http://192.168.1.5:8000/storage/${photo['path']}";
+            final serverPath = "https://techstrota.cloud/${photo['path']}";
             final filename = localPath.split('/').last;
             final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
             final isSelected = selectedImages.contains(localPath);
@@ -1113,7 +1112,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     if (isShared) {
                       // 🟩 OPEN PDF DIRECTLY FROM SERVER (not local)
                       final pdfUrl =
-                          "http://192.168.1.5:8000/storage/${photo['path']}";
+                          "https://techstrota.cloud/storage/${photo['path']}";
                       print("🌐 Opening shared PDF from server: $pdfUrl");
 
                       Navigator.push(

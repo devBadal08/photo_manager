@@ -280,11 +280,18 @@ class _CameraScreenState extends State<CameraScreen> {
                   await _controller.setZoomLevel(newZoom);
                   setState(() => _currentZoom = newZoom);
                 },
-                child: AspectRatio(
-                  aspectRatio: _controller.value.aspectRatio,
+                child: SizedBox.expand(
                   child: Stack(
                     children: [
-                      CameraPreview(_controller),
+                      FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: MediaQuery.of(context).size.width,
+                          height: MediaQuery.of(context).size.height,
+                          child: CameraPreview(_controller),
+                        ),
+                      ),
+
                       // Focus indicator
                       if (_showFocusIndicator && _focusPoint != null)
                         Positioned(
@@ -302,7 +309,8 @@ class _CameraScreenState extends State<CameraScreen> {
                             ),
                           ),
                         ),
-                      // ================= Recording Timer (Centered in Top Bar) =================
+
+                      // Recording timer
                       if (_isRecording)
                         Positioned(
                           top: 50,
@@ -310,7 +318,7 @@ class _CameraScreenState extends State<CameraScreen> {
                           right: 0,
                           child: Center(
                             child: Container(
-                              padding: const EdgeInsets.symmetric(
+                              padding: EdgeInsets.symmetric(
                                 vertical: 4,
                                 horizontal: 10,
                               ),
@@ -321,22 +329,19 @@ class _CameraScreenState extends State<CameraScreen> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  // Blinking red dot
                                   AnimatedOpacity(
-                                    opacity: _recordingSeconds % 2 == 0
-                                        ? 1.0
-                                        : 0.0,
-                                    duration: const Duration(milliseconds: 500),
-                                    child: const Icon(
+                                    opacity: _recordingSeconds % 2 == 0 ? 1 : 0,
+                                    duration: Duration(milliseconds: 500),
+                                    child: Icon(
                                       Icons.circle,
                                       color: Colors.redAccent,
                                       size: 12,
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
+                                  SizedBox(width: 6),
                                   Text(
                                     _formattedRecordingTime,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
@@ -385,138 +390,144 @@ class _CameraScreenState extends State<CameraScreen> {
             // ================= Bottom Controls =================
             Align(
               alignment: Alignment.bottomCenter,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 15,
-                  horizontal: 20,
-                ),
-                color: Colors.black.withOpacity(0.7),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        GestureDetector(
-                          onTap: () => setState(() => _isVideoMode = false),
-                          child: Text(
-                            "PHOTO",
-                            style: TextStyle(
-                              color: !_isVideoMode
-                                  ? Colors.yellow
-                                  : Colors.white70,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 25),
-                        GestureDetector(
-                          onTap: () => setState(() => _isVideoMode = true),
-                          child: Text(
-                            "VIDEO",
-                            style: TextStyle(
-                              color: _isVideoMode
-                                  ? Colors.yellow
-                                  : Colors.white70,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Thumbnail
-                        if (capturedMedia.isNotEmpty)
+              child: SafeArea(
+                bottom: true,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 15,
+                    horizontal: 20,
+                  ),
+                  color: Colors.black.withOpacity(0.7),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
                           GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => FullScreenMediaView(
-                                    media: capturedMedia,
-                                    initialIndex: capturedMedia.length - 1,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: ClipOval(
-                              child: Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  Container(
-                                    width: 45,
-                                    height: 45,
-                                    child:
-                                        capturedMedia.last.type ==
-                                            MediaType.image
-                                        ? Image(
-                                            key: ValueKey(
-                                              capturedMedia.last.file.path,
-                                            ),
-                                            image: FileImage(
-                                              capturedMedia.last.file,
-                                            ),
-                                            fit: BoxFit.cover,
-                                          )
-                                        : Container(
-                                            color: Colors.black26,
-                                            child: const Icon(
-                                              Icons.videocam,
-                                              color: Colors.white70,
-                                            ),
-                                          ),
-                                  ),
-                                  if (capturedMedia.last.type ==
-                                      MediaType.video)
-                                    const Icon(
-                                      Icons.play_arrow,
-                                      color: Colors.white,
-                                    ),
-                                ],
+                            onTap: () => setState(() => _isVideoMode = false),
+                            child: Text(
+                              "PHOTO",
+                              style: TextStyle(
+                                color: !_isVideoMode
+                                    ? Colors.yellow
+                                    : Colors.white70,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                          )
-                        else
-                          const SizedBox(width: 45, height: 45),
-                        // Capture button
-                        GestureDetector(
-                          onTap: () async {
-                            if (_isVideoMode) {
-                              _isRecording
-                                  ? await _stopVideoRecording()
-                                  : await _startVideoRecording();
-                            } else {
-                              await _capturePhoto();
-                            }
-                          },
-                          child: Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 4),
-                              color: _isVideoMode
-                                  ? (_isRecording ? Colors.red : Colors.white)
-                                  : Colors.white,
+                          ),
+                          const SizedBox(width: 25),
+                          GestureDetector(
+                            onTap: () => setState(() => _isVideoMode = true),
+                            child: Text(
+                              "VIDEO",
+                              style: TextStyle(
+                                color: _isVideoMode
+                                    ? Colors.yellow
+                                    : Colors.white70,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.cameraswitch,
-                            color: Colors.white,
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Thumbnail
+                          if (capturedMedia.isNotEmpty)
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => FullScreenMediaView(
+                                      media: capturedMedia,
+                                      initialIndex: capturedMedia.length - 1,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: ClipOval(
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Container(
+                                      width: 45,
+                                      height: 45,
+                                      child:
+                                          capturedMedia.last.type ==
+                                              MediaType.image
+                                          ? Image(
+                                              key: ValueKey(
+                                                capturedMedia.last.file.path,
+                                              ),
+                                              image: FileImage(
+                                                capturedMedia.last.file,
+                                              ),
+                                              fit: BoxFit.cover,
+                                            )
+                                          : Container(
+                                              color: Colors.black26,
+                                              child: const Icon(
+                                                Icons.videocam,
+                                                color: Colors.white70,
+                                              ),
+                                            ),
+                                    ),
+                                    if (capturedMedia.last.type ==
+                                        MediaType.video)
+                                      const Icon(
+                                        Icons.play_arrow,
+                                        color: Colors.white,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            const SizedBox(width: 45, height: 45),
+                          // Capture button
+                          GestureDetector(
+                            onTap: () async {
+                              if (_isVideoMode) {
+                                _isRecording
+                                    ? await _stopVideoRecording()
+                                    : await _startVideoRecording();
+                              } else {
+                                await _capturePhoto();
+                              }
+                            },
+                            child: Container(
+                              width: 60,
+                              height: 60,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 4,
+                                ),
+                                color: _isVideoMode
+                                    ? (_isRecording ? Colors.red : Colors.white)
+                                    : Colors.white,
+                              ),
+                            ),
                           ),
-                          iconSize: 35,
-                          onPressed: _switchCamera,
-                        ),
-                      ],
-                    ),
-                  ],
+                          IconButton(
+                            icon: const Icon(
+                              Icons.cameraswitch,
+                              color: Colors.white,
+                            ),
+                            iconSize: 35,
+                            onPressed: _switchCamera,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
