@@ -74,6 +74,8 @@ class _CameraScreenState extends State<CameraScreen> {
     // Enable auto-focus and auto-exposure
     await _controller.setFocusMode(FocusMode.auto);
     await _controller.setExposureMode(ExposureMode.auto);
+    await _controller.setFlashMode(FlashMode.off);
+    _flashMode = FlashMode.off;
 
     if (!mounted) return;
     setState(() => _isCameraInitialized = true);
@@ -134,6 +136,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
     try {
       await _controller.prepareForVideoRecording();
+      await _controller.setFlashMode(_flashMode);
       await _controller.startVideoRecording();
       setState(() => _isRecording = true);
       _startRecordingTimer();
