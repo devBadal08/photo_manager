@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 
 class PhotoService {
   static ValueNotifier<Set<String>> uploadedFiles = ValueNotifier<Set<String>>(
@@ -42,7 +43,7 @@ class PhotoService {
     required String folderName,
     required String token,
   }) async {
-    final url = Uri.parse('https://techstrota.cloud/api/photos/uploadAll');
+    final url = Uri.parse('http://192.168.1.13:8000/api/photos/uploadAll');
 
     try {
       final request = http.MultipartRequest('POST', url)
@@ -63,19 +64,16 @@ class PhotoService {
     }
   }
 
-  Future<Directory> getBaseDir() async {
+  static Future<Directory> getBaseDir() async {
     if (Platform.isAndroid) {
       final dir = Directory('/storage/emulated/0/Pictures/MyApp');
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
+      if (!await dir.exists()) await dir.create(recursive: true);
       return dir;
     } else {
-      final baseDir = Directory('/storage/emulated/0/Pictures/MyApp');
-      if (!await baseDir.exists()) {
-        await baseDir.create(recursive: true);
-      }
-      return baseDir;
+      final docDir = await getApplicationDocumentsDirectory();
+      final dir = Directory('${docDir.path}/MyApp');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      return dir;
     }
   }
 
@@ -228,6 +226,8 @@ class PhotoService {
     }
 
     final baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
+    //final baseDir = await PhotoService.getBaseDir();
+
     if (!await baseDir.exists()) {
       if (!silent && context != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -346,7 +346,7 @@ class PhotoService {
 
     try {
       // ✅ STEP 1: Check storage usage BEFORE showing loader
-      final checkUrl = Uri.parse('https://techstrota.cloud/api/storage-usage');
+      final checkUrl = Uri.parse('http://192.168.1.13:8000/api/storage-usage');
       final checkResponse = await http.get(
         checkUrl,
         headers: {
@@ -429,7 +429,7 @@ class PhotoService {
 
         final request = http.MultipartRequest(
           'POST',
-          Uri.parse('https://techstrota.cloud/api/photos/uploadAll'),
+          Uri.parse('http://192.168.1.13:8000/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 

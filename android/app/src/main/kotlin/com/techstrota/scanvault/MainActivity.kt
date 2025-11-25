@@ -1,4 +1,4 @@
-package com.example.photomanager_practice
+package com.techstrota.scanvault
 
 import io.flutter.embedding.android.FlutterActivity
 

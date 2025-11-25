@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 
 class FolderService {
   Future<String> loadUserId() async {
@@ -84,12 +85,12 @@ class FolderService {
   }
 
   Future<List<Directory>> loadFolders() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('user_id');
-    if (userId == null) return [];
+    final baseDir = await _getBaseFolder();
+    if (baseDir == null) return [];
 
-    final baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
-    if (!await baseDir.exists()) await baseDir.create(recursive: true);
+    if (!await baseDir.exists()) {
+      await baseDir.create(recursive: true);
+    }
 
     return baseDir
         .listSync()
@@ -99,17 +100,29 @@ class FolderService {
   }
 
   Future<bool> createFolder(String folderName) async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('user_id')?.toString();
-    if (userId == null) return false;
+    final baseDir = await _getBaseFolder();
+    if (baseDir == null) return false;
 
-    final dir = Directory(
-      '/storage/emulated/0/Pictures/MyApp/$userId/$folderName',
-    );
+    final dir = Directory('${baseDir.path}/$folderName');
+
     if (await dir.exists()) return false;
 
     await dir.create(recursive: true);
     return true;
+  }
+
+  Future<Directory?> _getBaseFolder() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('user_id');
+    if (userId == null) return null;
+
+    if (Platform.isAndroid) {
+      return Directory('/storage/emulated/0/Pictures/MyApp/$userId');
+    } else {
+      // iOS path
+      final docDir = await getApplicationDocumentsDirectory();
+      return Directory('${docDir.path}/MyApp/$userId');
+    }
   }
 
   Future<void> logoutUser() async {

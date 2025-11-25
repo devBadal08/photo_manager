@@ -11,6 +11,7 @@ import '../screen/user_profile_screen.dart';
 import '../services/folder_service.dart';
 import '../provider/theme_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:path_provider/path_provider.dart';
 
 class CustomDrawer extends StatefulWidget {
   final String userName;
@@ -80,7 +81,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
         if (logo.startsWith("http")) {
           _companyLogo = logo; // full URL
         } else {
-          _companyLogo = "https://techstrota.cloud/storage/company-logos/$logo";
+          _companyLogo = "http://192.168.1.13:8000/storage/company-logos/$logo";
         }
       }
     });
@@ -178,7 +179,15 @@ class _CustomDrawerState extends State<CustomDrawer> {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? userId = prefs.getString('user_id')?.toString();
-      final directory = Directory("/storage/emulated/0/Pictures/MyApp/$userId");
+      Directory directory;
+
+      if (Platform.isAndroid) {
+        directory = Directory("/storage/emulated/0/Pictures/MyApp/$userId");
+      } else {
+        // iOS: Use documents directory
+        final docDir = await getApplicationDocumentsDirectory();
+        directory = Directory("${docDir.path}/MyApp/$userId");
+      }
 
       final uploaded = await _getUploadedFiles();
 

@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart' hide ImageFormat;
+import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:path_provider/path_provider.dart';
 
 enum MediaType { image, video }
 
@@ -96,13 +98,20 @@ class _CameraScreenState extends State<CameraScreen> {
       final XFile image = await _controller.takePicture();
       File compressedFile = await PhotoService.compressImage(File(image.path));
 
-      final String newPath = widget.saveFolder != null
-          ? '${widget.saveFolder!.path}/${DateTime.now().millisecondsSinceEpoch}.jpg'
-          : '/storage/emulated/0/Pictures/MyApp/${widget.sharedFolderId}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final String newPath = await _getSavePath('jpg');
 
       final dir = File(newPath).parent;
       if (!await dir.exists()) await dir.create(recursive: true);
       await compressedFile.copy(newPath);
+
+      // Save to iOS gallery
+      if (Platform.isIOS) {
+        final bytes = await compressedFile.readAsBytes();
+        await PhotoManager.editor.saveImage(
+          bytes,
+          filename: "${DateTime.now().millisecondsSinceEpoch}.jpg",
+        );
+      }
 
       final mediaFile = MediaFile(file: File(newPath), type: MediaType.image);
 
@@ -114,6 +123,33 @@ class _CameraScreenState extends State<CameraScreen> {
     } finally {
       setState(() => _isCapturing = false);
     }
+  }
+
+  Future<String> _getSavePath(String extension) async {
+    Directory baseDir;
+
+    if (Platform.isAndroid) {
+      // Your original logic
+      if (widget.saveFolder != null) {
+        baseDir = widget.saveFolder!;
+      } else {
+        baseDir = Directory(
+          '/storage/emulated/0/Pictures/MyApp/${widget.sharedFolderId}',
+        );
+      }
+    } else if (Platform.isIOS) {
+      // iOS ONLY → Safe inside app documents folder
+      baseDir = await getApplicationDocumentsDirectory();
+      baseDir = Directory('${baseDir.path}/MyAppMedia');
+    } else {
+      baseDir = await getTemporaryDirectory();
+    }
+
+    if (!await baseDir.exists()) {
+      await baseDir.create(recursive: true);
+    }
+
+    return '${baseDir.path}/${DateTime.now().millisecondsSinceEpoch}.$extension';
   }
 
   // ================= Start / Stop Timer =================
@@ -176,14 +212,17 @@ class _CameraScreenState extends State<CameraScreen> {
 
       if (compressedVideo == null) return null;
 
-      final String newVideoPath = widget.saveFolder != null
-          ? '${widget.saveFolder!.path}/${DateTime.now().millisecondsSinceEpoch}.mp4'
-          : '/storage/emulated/0/Pictures/MyApp/${widget.sharedFolderId}/${DateTime.now().millisecondsSinceEpoch}.mp4';
+      final String newVideoPath = await _getSavePath('mp4');
 
       final dir = File(newVideoPath).parent;
       if (!await dir.exists()) await dir.create(recursive: true);
 
       final savedFile = await File(compressedVideo.path!).copy(newVideoPath);
+
+      // Save to iOS gallery
+      if (Platform.isIOS) {
+        await PhotoManager.editor.saveVideo(savedFile);
+      }
 
       setState(() {
         capturedMedia.add(MediaFile(file: savedFile, type: MediaType.video));

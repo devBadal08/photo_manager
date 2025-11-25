@@ -8,6 +8,7 @@ import 'package:path/path.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'photo_service.dart';
 import 'bottom_tabs.dart';
+import 'package:path_provider/path_provider.dart';
 
 class AutoUploadService {
   static final AutoUploadService _instance = AutoUploadService._internal();
@@ -38,6 +39,20 @@ class AutoUploadService {
         (current == ConnectivityResult.wifi ||
             current == ConnectivityResult.mobile)) {
       _uploadPendingImages(); // private
+    }
+  }
+
+  Future<Directory?> _getRootFolder() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('user_id')?.toString();
+    if (userId == null) return null;
+
+    if (Platform.isAndroid) {
+      return Directory('/storage/emulated/0/Pictures/MyApp/$userId');
+    } else {
+      // iOS: use application documents directory
+      final docDir = await getApplicationDocumentsDirectory();
+      return Directory('${docDir.path}/MyApp/$userId');
     }
   }
 
@@ -72,8 +87,8 @@ class AutoUploadService {
       final userId = prefs.getString('user_id')?.toString();
       if (userId == null) return;
 
-      final root = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
-      if (!await root.exists()) return;
+      final root = await _getRootFolder();
+      if (root == null || !await root.exists()) return;
 
       final files = root
           .listSync(recursive: true)

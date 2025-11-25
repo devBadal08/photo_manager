@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "709681972536",
+    "project_id": "scanvault-app-8a335",
+    "storage_bucket": "scanvault-app-8a335.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:709681972536:android:34386d9ebb221b92e5edcd",
+        "android_client_info": {
+          "package_name": "com.example.photomanager_practice"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB9YilHRiU-c_Gf_l3W7iNNlyu09cDbOek"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
