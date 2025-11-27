@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_cropper/image_cropper.dart';
 
 class ImageEditorScreen extends StatefulWidget {
-  final List<File> images;
+  final List<dynamic> images;
   final int initialIndex;
 
   const ImageEditorScreen({

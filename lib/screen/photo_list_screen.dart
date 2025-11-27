@@ -79,7 +79,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   List<dynamic> images = [];
 
   bool isMedia(String filePath) {
-    final mediaExtensions = ['jpg', 'jpeg', 'png', 'mp4'];
+    final mediaExtensions = ['jpg', 'jpeg', 'png', 'mp4', 'pdf'];
     final extension = filePath.split('.').last.toLowerCase();
     return mediaExtensions.contains(extension);
   }
@@ -742,6 +742,13 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   }
 
   Future<void> _renamePdf(File pdfFile) async {
+    if (!await pdfFile.exists()) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("PDF file not found")));
+      return;
+    }
+
     String currentName = pdfFile.path.split('/').last.replaceAll('.pdf', '');
 
     final result = await showDialog<String>(
@@ -773,16 +780,25 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
     if (result == null) return;
 
-    final newPath = '${pdfFile.parent.path}/$result.pdf';
     try {
-      final newFile = await pdfFile.rename(newPath);
+      final newPath = '${pdfFile.parent.path}/$result.pdf';
 
-      // Update the imageItems list so the UI refreshes
-      setState(() {
-        final index = imageItems.indexWhere((f) => f.path == pdfFile.path);
-        if (index != -1) imageItems[index] = newFile;
-        items = [...folderItems, ...imageItems];
-      });
+      final exists = await File(newPath).exists();
+      if (exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("A PDF with this name already exists")),
+        );
+        return;
+      }
+
+      await pdfFile.rename(newPath);
+
+      // ✅ VERY IMPORTANT: refresh everything from disk again
+      if (widget.isShared) {
+        _loadSharedPhotos(widget.sharedFolderId!);
+      } else {
+        await _loadItems();
+      }
 
       ScaffoldMessenger.of(
         context,
@@ -1130,7 +1146,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             final photo = displayedPhotos[index];
             final isLocal = photo['local'] == true;
             final localPath = photo['path'];
-            final serverPath = "http://192.168.1.13:8000/${photo['path']}";
+            final serverPath =
+                "http://192.168.1.13:8000/storage/${photo['path']}";
             final filename = localPath.split('/').last;
             final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
             final isSelected = selectedImages.contains(localPath);
@@ -1201,27 +1218,45 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                       );
                     }
                   } else if (isVideoFile) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            VideoPlayerScreen(videoFile: File(localPath)),
-                      ),
-                    );
+                    if (isLocal) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              VideoPlayerScreen(videoFile: File(localPath)),
+                        ),
+                      );
+                    } else {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              VideoNetworkPlayerScreen(videoUrl: serverPath),
+                        ),
+                      );
+                    }
                   } else {
+                    final galleryItems = displayedPhotos.map<dynamic>((p) {
+                      if (p['local'] == true) {
+                        return File(p['path']); // local image / video / pdf
+                      } else {
+                        return "http://192.168.1.13:8000/storage/${p['path']}"; // server
+                      }
+                    }).toList();
+
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => GalleryScreen(
-                          images: displayedPhotos
-                              .where(
-                                (p) =>
-                                    !p['path'].toLowerCase().endsWith('.pdf') &&
-                                    !isVideo(p['path']),
-                              )
-                              .map((p) => File(p['path']))
-                              .toList(),
-                          startIndex: index,
+                          images: galleryItems,
+                          startIndex: galleryItems.indexWhere((item) {
+                            final itemPath = item is File
+                                ? item.path
+                                : item.toString();
+                            return itemPath.endsWith(
+                              photo['path'].split('/').last,
+                            );
+                          }),
                         ),
                       ),
                     );
@@ -1245,20 +1280,53 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                               ),
                             )
                           : isVideoFile
-                          ? VideoThumbWidget(videoPath: localPath)
+                          ? (isLocal
+                                ? VideoThumbWidget(videoPath: localPath)
+                                // ✅ SERVER VIDEO → NO Image.network → show custom video thumbnail box
+                                : Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      Container(color: Colors.black54),
+
+                                      const Center(
+                                        child: Icon(
+                                          Icons.play_circle_fill,
+                                          size: 50,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+
+                                      Positioned(
+                                        bottom: 6,
+                                        right: 6,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withOpacity(
+                                              0.7,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            "VIDEO",
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ))
                           : (isLocal
-                                ? Image.file(
-                                    File(localPath),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        const Icon(Icons.broken_image),
-                                  )
-                                : Image.network(
-                                    serverPath,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        const Icon(Icons.broken_image),
-                                  )),
+                                ? Image.file(File(localPath), fit: BoxFit.cover)
+                                : Image.network(serverPath, fit: BoxFit.cover)),
                     ),
                   ),
                   // Selection checkbox
@@ -1300,14 +1368,14 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                       ),
                     ),
                   // PDF rename button
-                  if (isPdf)
+                  if (isPdf && isLocal) // ✅ only local PDFs can be renamed
                     Positioned(
                       right: 6,
                       bottom: 6,
                       child: GestureDetector(
                         onTap: () => _renamePdf(File(localPath)),
                         child: Container(
-                          decoration: BoxDecoration(
+                          decoration: const BoxDecoration(
                             color: Colors.blueAccent,
                             shape: BoxShape.circle,
                           ),
@@ -1317,6 +1385,25 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                             color: Colors.white,
                             size: 18,
                           ),
+                        ),
+                      ),
+                    ),
+
+                  // Optional: show lock icon for shared
+                  if (isPdf && !isLocal)
+                    Positioned(
+                      right: 6,
+                      bottom: 6,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(4),
+                        child: const Icon(
+                          Icons.lock,
+                          color: Colors.white,
+                          size: 18,
                         ),
                       ),
                     ),
@@ -1598,19 +1685,48 @@ class VideoThumbWidget extends StatelessWidget {
     );
   }
 
+  Future<String> _getDuration() async {
+    VideoPlayerController controller;
+
+    if (videoPath.startsWith('http')) {
+      controller = VideoPlayerController.network(videoPath);
+    } else {
+      controller = VideoPlayerController.file(File(videoPath));
+    }
+
+    await controller.initialize();
+    final duration = controller.value.duration;
+    controller.dispose();
+
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+
+    if (duration.inHours > 0) {
+      return "${duration.inHours.toString().padLeft(2, '0')}:$minutes:$seconds";
+    }
+
+    return "$minutes:$seconds";
+  }
+
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Uint8List?>(
-      future: _getThumb(),
-      builder: (context, snap) {
+    return FutureBuilder(
+      future: Future.wait([_getThumb(), _getDuration()]),
+      builder: (context, AsyncSnapshot<List<dynamic>> snap) {
         if (!snap.hasData) {
-          return Container(color: Colors.black12);
+          return Container(color: Colors.black26);
         }
+
+        final Uint8List imageData = snap.data![0];
+        final String duration = snap.data![1];
 
         return Stack(
           fit: StackFit.expand,
           children: [
-            Image.memory(snap.data!, fit: BoxFit.cover),
+            // Thumbnail image
+            Image.memory(imageData, fit: BoxFit.cover),
+
+            // Play icon
             const Center(
               child: Icon(
                 Icons.play_circle_fill,
@@ -1618,9 +1734,74 @@ class VideoThumbWidget extends StatelessWidget {
                 size: 40,
               ),
             ),
+
+            // ⏱ Duration Badge
+            Positioned(
+              bottom: 6,
+              right: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.75),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  duration,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
           ],
         );
       },
+    );
+  }
+}
+
+class VideoNetworkPlayerScreen extends StatefulWidget {
+  final String videoUrl;
+  const VideoNetworkPlayerScreen({super.key, required this.videoUrl});
+
+  @override
+  State<VideoNetworkPlayerScreen> createState() =>
+      _VideoNetworkPlayerScreenState();
+}
+
+class _VideoNetworkPlayerScreenState extends State<VideoNetworkPlayerScreen> {
+  late VideoPlayerController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.network(widget.videoUrl)
+      ..initialize().then((_) {
+        setState(() {});
+        _controller.play();
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Video")),
+      body: Center(
+        child: _controller.value.isInitialized
+            ? AspectRatio(
+                aspectRatio: _controller.value.aspectRatio,
+                child: VideoPlayer(_controller),
+              )
+            : const CircularProgressIndicator(),
+      ),
     );
   }
 }
