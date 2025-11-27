@@ -437,9 +437,17 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Rename Folder'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'New folder name'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              'Do not use: /  \\  :  *  ?  "  <  >  |',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+            SizedBox(height: 12),
+            TextField(decoration: InputDecoration(hintText: 'New folder name')),
+          ],
         ),
         actions: [
           TextButton(
@@ -452,6 +460,19 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               Navigator.pop(context);
 
               if (newName.isEmpty) return;
+
+              // ✅ BLOCK invalid characters
+              final invalidChars = RegExp(r'[\\/:*?"<>|]');
+              if (invalidChars.hasMatch(newName)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Folder name cannot contain: /  \\  :  *  ?  "  <  >  |',
+                    ),
+                  ),
+                );
+                return;
+              }
 
               // ❌ block rename to match parent folder name
               if (newName.toLowerCase() == _mainFolderName.toLowerCase()) {
@@ -522,16 +543,37 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Enter Subfolder Name'),
-        content: TextField(
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'MySubFolder'),
-          onChanged: (value) => folderName = value.trim(),
+
+        // ✅ UPDATED CONTENT (Option 3 - minimal rule UI)
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Do not use: /  \\  :  *  ?  "  <  >  |',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+
+            const SizedBox(height: 12),
+
+            TextField(
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'Enter subfolder name',
+                border: UnderlineInputBorder(),
+              ),
+              onChanged: (value) => folderName = value.trim(),
+            ),
+          ],
         ),
+
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
+
+          // ✅ UPDATED OK BUTTON
           ElevatedButton(
             onPressed: () {
               if (folderName.isEmpty) {
@@ -550,7 +592,20 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 return;
               }
 
-              Navigator.pop(context); // Close dialog if validation passes
+              // ✅ BLOCK these characters: / \ : * ? " < > |
+              final invalidChars = RegExp(r'[\\/:*?"<>|]');
+              if (invalidChars.hasMatch(folderName)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Subfolder name cannot contain: /  \\  :  *  ?  "  <  >  |',
+                    ),
+                  ),
+                );
+                return;
+              }
+
+              Navigator.pop(context); // Close dialog
               _createSubFolder(folderName);
             },
             child: const Text('OK'),

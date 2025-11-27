@@ -512,11 +512,13 @@ class _CameraScreenState extends State<CameraScreen> {
                                               ),
                                               fit: BoxFit.cover,
                                             )
-                                          : Container(
-                                              color: Colors.black26,
-                                              child: const Icon(
-                                                Icons.videocam,
-                                                color: Colors.white70,
+                                          : ClipOval(
+                                              child: SizedBox(
+                                                width: 45,
+                                                height: 45,
+                                                child: VideoThumbnailPlayer(
+                                                  file: capturedMedia.last.file,
+                                                ),
                                               ),
                                             ),
                                     ),
@@ -698,6 +700,59 @@ class _FullScreenMediaViewState extends State<FullScreenMediaView> {
               ),
             )
           : null,
+    );
+  }
+}
+
+class VideoThumbnailPlayer extends StatefulWidget {
+  final File file;
+  const VideoThumbnailPlayer({super.key, required this.file});
+
+  @override
+  State<VideoThumbnailPlayer> createState() => _VideoThumbnailPlayerState();
+}
+
+class _VideoThumbnailPlayerState extends State<VideoThumbnailPlayer> {
+  late VideoPlayerController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = VideoPlayerController.file(widget.file)
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() {});
+          _controller.setLooping(true); // loop small preview
+          _controller.play();
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_controller.value.isInitialized) {
+      return Container(color: Colors.black26);
+    }
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _controller.value.isPlaying
+              ? _controller.pause()
+              : _controller.play();
+        });
+      },
+      child: AspectRatio(
+        aspectRatio: _controller.value.aspectRatio,
+        child: VideoPlayer(_controller),
+      ),
     );
   }
 }

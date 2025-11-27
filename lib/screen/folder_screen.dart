@@ -196,11 +196,26 @@ class _FolderScreenState extends State<FolderScreen>
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Create Folder'),
-        content: TextField(
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Enter folder name'),
-          onChanged: (value) => folderName = value.trim(),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Do not use: /  \\  :  *  ?  "  <  >  |',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: "Enter folder name",
+                border: UnderlineInputBorder(),
+              ),
+              onChanged: (value) => folderName = value.trim(),
+            ),
+          ],
         ),
+
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
@@ -224,7 +239,49 @@ class _FolderScreenState extends State<FolderScreen>
                 return;
               }
 
+              // ✅ BLOCK / \ : * ? " < > |
+              final invalidChars = RegExp(r'[\\/:*?"<>|]');
+              if (invalidChars.hasMatch(folderName)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Folder name cannot contain: /  \\  :  *  ?  "  <  >  |',
+                    ),
+                  ),
+                );
+                return;
+              }
+
+              Navigator.of(dialogContext).pop(); // Close first dialog
+              _showSecondDialog(folderName); // ✅ Open second dialog
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showSecondDialog(String folderName) async {
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm Folder Creation'),
+        content: Text(
+          'Are you sure you want to create this folder?\n\n"$folderName"',
+          style: const TextStyle(fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
               final created = await folderService.createFolder(folderName);
+
+              if (!mounted) return;
+
               if (created) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Folder created successfully')),
@@ -235,11 +292,12 @@ class _FolderScreenState extends State<FolderScreen>
                 );
               }
 
-              Navigator.of(dialogContext).pop();
+              Navigator.of(dialogContext).pop(); // close 2nd dialog
+
               _loadFolders();
               _countFoldersAndImages();
             },
-            child: const Text('OK'),
+            child: const Text('Confirm'),
           ),
         ],
       ),
@@ -255,38 +313,82 @@ class _FolderScreenState extends State<FolderScreen>
   }
 
   Future<void> _renameFolder(Directory folder) async {
-    final TextEditingController controller = TextEditingController();
+    final TextEditingController controller = TextEditingController(
+      text: folder.path.split('/').last,
+    );
 
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Rename Folder'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'New folder name'),
+
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Do not use: /  \\  :  *  ?  "  <  >  |',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(hintText: 'New folder name'),
+            ),
+          ],
         ),
+
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
+
           ElevatedButton(
             onPressed: () async {
               final newName = controller.text.trim();
-              Navigator.pop(context); // Close dialog
+              Navigator.pop(context);
 
-              if (newName.isNotEmpty) {
-                final newPath = '${folder.parent.path}/$newName';
-                final newDir = Directory(newPath);
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Folder name cannot be empty')),
+                );
+                return;
+              }
 
-                if (!await newDir.exists()) {
-                  await folder.rename(newPath);
-                  _loadFolders(); // Refresh UI
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Folder already exists')),
-                  );
-                }
+              if (newName.length > 50) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Folder name must be 50 characters or less'),
+                  ),
+                );
+                return;
+              }
+
+              // ✅ BLOCK invalid characters
+              final invalidChars = RegExp(r'[\\/:*?"<>|]');
+              if (invalidChars.hasMatch(newName)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Folder name cannot contain: /  \\  :  *  ?  "  <  >  |',
+                    ),
+                  ),
+                );
+                return;
+              }
+
+              final newPath = '${folder.parent.path}/$newName';
+              final newDir = Directory(newPath);
+
+              if (!await newDir.exists()) {
+                await folder.rename(newPath);
+                _loadFolders(); // Refresh UI
+                _countFoldersAndImages();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Folder already exists')),
+                );
               }
             },
             child: const Text('Rename'),
