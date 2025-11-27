@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:photomanager_practice/screen/camera_screen.dart';
@@ -9,6 +10,8 @@ import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
+import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 
 class PhotoListScreen extends StatefulWidget {
   final Directory? folder;
@@ -1242,19 +1245,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                               ),
                             )
                           : isVideoFile
-                          ? Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Container(color: Colors.black12),
-                                const Center(
-                                  child: Icon(
-                                    Icons.videocam,
-                                    color: Colors.white70,
-                                    size: 40,
-                                  ),
-                                ),
-                              ],
-                            )
+                          ? VideoThumbWidget(videoPath: localPath)
                           : (isLocal
                                 ? Image.file(
                                     File(localPath),
@@ -1398,20 +1389,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   Positioned.fill(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: extension == 'mp4'
-                          ? Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Container(color: Colors.black12),
-                                const Center(
-                                  child: Icon(
-                                    Icons.videocam,
-                                    color: Colors.white70,
-                                    size: 40,
-                                  ),
-                                ),
-                              ],
-                            )
+                      child: isVideo(file.path)
+                          ? VideoThumbWidget(videoPath: file.path)
                           : extension == 'pdf'
                           ? Container(
                               color: Colors.grey[200],
@@ -1426,8 +1405,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                           : Image.file(
                               file,
                               fit: BoxFit.cover,
-                              // cacheWidth: 300,
-                              // cacheHeight: 300,
                               errorBuilder: (_, __, ___) =>
                                   const Icon(Icons.broken_image),
                             ),
@@ -1604,5 +1581,46 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     }
 
     return {'subfolders': subfolderCount, 'images': imageCount};
+  }
+}
+
+class VideoThumbWidget extends StatelessWidget {
+  final String videoPath;
+
+  const VideoThumbWidget({super.key, required this.videoPath});
+
+  Future<Uint8List?> _getThumb() async {
+    return await vt.VideoThumbnail.thumbnailData(
+      video: videoPath,
+      imageFormat: vt.ImageFormat.JPEG,
+      maxWidth: 300,
+      quality: 65,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List?>(
+      future: _getThumb(),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return Container(color: Colors.black12);
+        }
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.memory(snap.data!, fit: BoxFit.cover),
+            const Center(
+              child: Icon(
+                Icons.play_circle_fill,
+                color: Colors.white,
+                size: 40,
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

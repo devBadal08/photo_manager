@@ -54,6 +54,7 @@ dependencies:
   flutter_svg: ^2.2.0
   video_player: ^2.10.0
   video_compress: ^3.1.0
+  video_thumbnail: ^0.5.6
   syncfusion_flutter_pdfviewer: ^28.1.37
   audioplayers: ^6.5.1
   firebase_core: ^3.0.0

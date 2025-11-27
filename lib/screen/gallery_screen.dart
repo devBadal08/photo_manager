@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:photomanager_practice/screen/image_editor_screen.dart';
+import 'package:photomanager_practice/screen/photo_list_screen.dart';
 import 'package:video_player/video_player.dart'; // 👈 for video playback
 
 class GalleryScreen extends StatefulWidget {
@@ -84,16 +85,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
               }
             },
             child: isVideo(file)
-                ? Container(
-                    color: Colors.black54,
-                    child: const Center(
-                      child: Icon(
-                        Icons.play_circle_fill,
-                        size: 60,
-                        color: Colors.white,
-                      ),
-                    ),
-                  )
+                ? VideoThumbWidget(videoPath: file.path)
                 : Image.file(
                     file,
                     fit: BoxFit.cover,
