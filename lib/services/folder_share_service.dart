@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:photomanager_practice/services/folder_service.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,25 +17,28 @@ class FolderShareService {
     return prefs.getString("auth_token");
   }
 
-  static Future<int?> getFolderId(Directory folder) async {
-    final folderName = folder.path.split('/').last;
+  static Future<int?> getFolderId({
+    required String folderName,
+    int? parentId,
+  }) async {
+    final token = await FolderService().getAuthToken();
+    if (token == null || token.isEmpty) return null;
 
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString("auth_token");
-
-    if (token == null) return null;
-
-    final url = "$baseUrl/folders/id?name=$folderName";
-
-    final response = await http.get(
-      Uri.parse(url),
-      headers: {"Authorization": "Bearer $token", "Accept": "application/json"},
+    final response = await http.post(
+      Uri.parse("$baseUrl/get-folder-id"),
+      headers: {"Accept": "application/json", "Authorization": "Bearer $token"},
+      body: {
+        "name": folderName,
+        if (parentId != null) "parent_id": parentId.toString(),
+      },
     );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['folder_id'];
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode == 200 && data["folder_id"] != null) {
+      return data["folder_id"];
     }
+
     return null;
   }
 

@@ -21,6 +21,7 @@ class PhotoListScreen extends StatefulWidget {
   final bool isShared;
   final String userId;
   final Directory? selectedFolder;
+  final int? folderBackendId; // ✅ ADD THIS
 
   const PhotoListScreen({
     super.key,
@@ -30,6 +31,7 @@ class PhotoListScreen extends StatefulWidget {
     this.isShared = false,
     required this.userId,
     this.selectedFolder,
+    this.folderBackendId,
   });
 
   @override
@@ -136,6 +138,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       if (data['folders'] != null) {
         apiFolders = List<Map<String, dynamic>>.from(data['folders']);
       }
+      print("📁 Shared subfolders: ${apiFolders.length}");
     }
 
     // Merge newly taken + server photos
@@ -567,10 +570,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       ),
       builder: (ctx) => Wrap(
         children: [
-          // ================= EMAIL SHARE =================
+          // ======================= EMAIL SHARE =======================
           ListTile(
             leading: const Icon(Icons.email, color: Colors.blue),
-            title: const Text("Share Subfolder via Email (App Share)"),
+            title: const Text("Share Subfolder via Email"),
             onTap: () async {
               Navigator.pop(ctx);
 
@@ -583,9 +586,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                   content: TextField(
                     controller: controller,
                     decoration: const InputDecoration(
-                      hintText: 'Enter User Email to share with',
+                      hintText: 'Enter user email',
                     ),
-                    keyboardType: TextInputType.emailAddress,
                   ),
                   actions: [
                     TextButton(
@@ -598,20 +600,22 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
                         if (email.isEmpty || !email.contains("@")) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Invalid Email')),
+                            const SnackBar(content: Text('Invalid email')),
                           );
                           return;
                         }
 
-                        // ✅ Get Subfolder ID from server
-                        final folderId = widget.sharedFolderId;
+                        final folderId = await FolderShareService.getFolderId(
+                          folderName: subfolder.path.split('/').last,
+                          parentId: widget.folderBackendId,
+                        );
 
                         if (folderId == null) {
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
-                                'This subfolder hasn’t been uploaded yet. Upload first to share.',
+                                'This subfolder hasn’t been uploaded yet. Upload it first.',
                               ),
                             ),
                           );
@@ -628,7 +632,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                           SnackBar(
                             content: Text(
                               success
-                                  ? 'Subfolder shared successfully!'
+                                  ? 'Subfolder shared successfully ✅'
                                   : 'Failed to share subfolder',
                             ),
                           ),
@@ -642,12 +646,12 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             },
           ),
 
-          // ================= FILE SHARE =================
+          // ======================= WHATSAPP / BLUETOOTH SHARE =======================
           ListTile(
             leading: const Icon(Icons.share, color: Colors.green),
-            title: const Text("Share Subfolder via WhatsApp / Bluetooth"),
+            title: const Text("Share via WhatsApp / Bluetooth"),
             onTap: () async {
-              Navigator.pop(ctx);
+              Navigator.pop(ctx); // close bottom sheet
 
               final files = subfolder
                   .listSync()
@@ -656,8 +660,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     (f) =>
                         f.path.endsWith(".jpg") ||
                         f.path.endsWith(".jpeg") ||
-                        f.path.endsWith(".png") ||
-                        f.path.endsWith(".pdf"),
+                        f.path.endsWith(".png"),
                   )
                   .map((f) => XFile(f.path))
                   .toList();
@@ -671,7 +674,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text("No files found in this subfolder"),
+                    content: Text("No images found in this subfolder"),
                   ),
                 );
               }
@@ -1809,6 +1812,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     folder: folder,
                     userId: widget.userId,
                     selectedFolder: widget.selectedFolder,
+                    folderBackendId: widget.folderBackendId,
                   ),
                 ),
               );
@@ -1872,26 +1876,57 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   Widget _buildSharedFolders() {
     if (apiFolders.isEmpty) {
-      return const Center(child: Text("No shared subfolders found"));
+      return const Center(
+        child: Text(
+          "No shared subfolders found",
+          style: TextStyle(color: Colors.white70),
+        ),
+      );
     }
 
     return ListView.builder(
+      padding: const EdgeInsets.all(12),
       itemCount: apiFolders.length,
       itemBuilder: (context, index) {
         final folder = apiFolders[index];
 
+        final folderName = folder['name'] ?? 'Unnamed';
+
+        final subfolderCount = folder['subfolders_count'] ?? 0;
+        final imageCount = folder['images_count'] ?? 0;
+        final videoCount = folder['videos_count'] ?? 0;
+        final pdfCount = folder['pdfs_count'] ?? 0;
+
         return Card(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 4,
           child: ListTile(
-            leading: const Icon(Icons.folder, color: Colors.orange),
-            title: Text(folder['name']),
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 12,
+              horizontal: 16,
+            ),
+
+            // ❌ removed trailing icons
+            leading: const Icon(Icons.folder, size: 40, color: Colors.orange),
+
+            title: Text(
+              folderName,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+
             onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => PhotoListScreen(
                     isShared: true,
-                    sharedFolderName:
-                        folder['path'], // full path like: 5/main/sub
+                    sharedFolderId: folder['id'], // ✅ IMPORTANT
+                    sharedFolderName: folder['path'], // ✅ optional
                     userId: widget.userId,
                   ),
                 ),

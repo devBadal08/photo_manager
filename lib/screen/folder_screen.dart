@@ -441,8 +441,10 @@ class _FolderScreenState extends State<FolderScreen>
 
                         // Get folder ID from server
                         final folderId = await FolderShareService.getFolderId(
-                          folder,
+                          folderName: folder.path.split('/').last,
+                          parentId: null, // main folder has no parent
                         );
+
                         if (folderId == null) {
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
