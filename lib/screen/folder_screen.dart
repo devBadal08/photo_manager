@@ -253,31 +253,6 @@ class _FolderScreenState extends State<FolderScreen>
               }
 
               Navigator.of(dialogContext).pop(); // Close first dialog
-              _showSecondDialog(folderName); // ✅ Open second dialog
-            },
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showSecondDialog(String folderName) async {
-    await showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Confirm Folder Creation'),
-        content: Text(
-          'Are you sure you want to create this folder?\n\n"$folderName"',
-          style: const TextStyle(fontSize: 15),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
               final created = await folderService.createFolder(folderName);
 
               if (!mounted) return;
@@ -292,12 +267,10 @@ class _FolderScreenState extends State<FolderScreen>
                 );
               }
 
-              Navigator.of(dialogContext).pop(); // close 2nd dialog
-
               _loadFolders();
               _countFoldersAndImages();
             },
-            child: const Text('Confirm'),
+            child: const Text('OK'),
           ),
         ],
       ),

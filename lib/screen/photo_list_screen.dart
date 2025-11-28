@@ -346,28 +346,66 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               vertical: 12,
               horizontal: 16,
             ),
-            leading: const Icon(
-              Icons.picture_as_pdf,
-              size: 40,
-              color: Colors.redAccent,
-            ),
+
+            leading: selectionMode
+                ? Checkbox(
+                    value: selectedImages.contains(pdfFile.path),
+                    onChanged: (checked) {
+                      setState(() {
+                        if (checked == true) {
+                          selectedImages.add(pdfFile.path);
+                        } else {
+                          selectedImages.remove(pdfFile.path);
+                        }
+                      });
+                    },
+                  )
+                : const Icon(
+                    Icons.picture_as_pdf,
+                    size: 40,
+                    color: Colors.redAccent,
+                  ),
+
             title: Text(
               pdfName,
               style: Theme.of(
                 context,
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
-            trailing: IconButton(
-              icon: const Icon(Icons.edit_note, color: Colors.blueAccent),
-              onPressed: () => _renamePdf(pdfFile),
-            ),
+
+            trailing: selectionMode
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.edit_note, color: Colors.blueAccent),
+                    onPressed: () => _renamePdf(pdfFile),
+                  ),
+
+            onLongPress: () {
+              setState(() {
+                selectionMode = true;
+                if (!selectedImages.contains(pdfFile.path)) {
+                  selectedImages.add(pdfFile.path);
+                }
+              });
+            },
+
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PdfViewerScreen(pdfFile: pdfFile),
-                ),
-              );
+              if (selectionMode) {
+                setState(() {
+                  if (selectedImages.contains(pdfFile.path)) {
+                    selectedImages.remove(pdfFile.path);
+                  } else {
+                    selectedImages.add(pdfFile.path);
+                  }
+                });
+              } else {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PdfViewerScreen(pdfFile: pdfFile),
+                  ),
+                );
+              }
             },
           ),
         );
@@ -391,6 +429,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             ? pdf.path.split('/').last
             : pdf['name'] ?? pdf['path'].split('/').last;
         final pdfPath = pdf is File ? pdf.path : pdf['url'] ?? pdf['path'];
+        final isSelected = selectedImages.contains(pdfPath);
 
         // Detect whether it's a shared (server) PDF or a local file
         final bool isShared =
@@ -988,6 +1027,30 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     }
   }
 
+  Future<void> _shareSelectedFiles() async {
+    if (selectedImages.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("No files selected")));
+      return;
+    }
+
+    final List<XFile> files = selectedImages.map((path) {
+      if (path.startsWith("http")) {
+        return XFile(path);
+      } else {
+        return XFile(File(path).path);
+      }
+    }).toList();
+
+    await Share.shareXFiles(files, text: "📁 Shared from ${_mainFolderName}");
+
+    setState(() {
+      selectionMode = false;
+      selectedImages.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     //final colorScheme = Theme.of(context).colorScheme;
@@ -1054,6 +1117,13 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 icon: const Icon(Icons.delete, color: Colors.red),
                 onPressed: _deleteSelectedImages,
               ),
+
+            if (selectionMode)
+              IconButton(
+                icon: const Icon(Icons.share, color: Colors.green),
+                onPressed: _shareSelectedFiles,
+              ),
+
             PopupMenuButton<String>(
               onSelected: (value) {
                 if (value == 'select') {
@@ -1066,7 +1136,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               itemBuilder: (_) => [
                 const PopupMenuItem(
                   value: 'select',
-                  child: Text('Select Photos to Upload'),
+                  child: Text('Select Files to Share'),
                 ),
               ],
               icon: const Icon(Icons.more_vert),
