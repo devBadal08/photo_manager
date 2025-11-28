@@ -213,4 +213,51 @@ class FolderShareService {
       return false;
     }
   }
+
+  Future<Map<String, dynamic>?> getSharedFolderByPath(String path) async {
+    final response = await http.get(
+      Uri.parse("$baseUrl/shared-folder/by-path?path=$path"),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    }
+    return null;
+  }
+
+  Map<String, String> get headers => {
+    "Authorization": "Bearer ${_getToken()}",
+    "Accept": "application/json",
+  };
+
+  Future<bool> shareSubFolder({
+    required Directory folder,
+    required String userId,
+    required BuildContext context,
+  }) async {
+    try {
+      final folderName = folder.path.split('/').last;
+
+      final uri = Uri.parse("$baseUrl/share/subfolder");
+
+      final request = http.MultipartRequest('POST', uri);
+      request.fields['user_id'] = userId;
+      request.fields['folder_name'] = folderName;
+      request.fields['path'] = folder.path;
+
+      final res = await request.send();
+
+      if (res.statusCode == 200) {
+        print("✅ Subfolder shared: $folderName");
+        return true;
+      } else {
+        print("❌ Failed to share: ${res.statusCode}");
+        return false;
+      }
+    } catch (e) {
+      print("❌ Error: $e");
+      return false;
+    }
+  }
 }

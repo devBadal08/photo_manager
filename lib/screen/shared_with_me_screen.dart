@@ -25,8 +25,7 @@ class SharedWithMeScreen extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             itemCount: sharedFolders.length,
             itemBuilder: (context, index) {
-              final share = sharedFolders[index];
-              final folder = share['folder'];
+              final folder = sharedFolders[index];
 
               return Card(
                 margin: const EdgeInsets.symmetric(vertical: 8),
@@ -40,17 +39,17 @@ class SharedWithMeScreen extends StatelessWidget {
                     size: 40,
                     color: Colors.green,
                   ),
-                  title: Text(folder['name'] ?? "Unnamed Folder"),
-                  subtitle: Text("Shared by User ID: ${share['shared_by']}"),
+                  title: Text(folder['name'] ?? 'Unnamed Folder'),
+                  subtitle: Text("Owner ID: ${folder['user_id']}"),
+
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => PhotoListScreen(
                           isShared: true,
-                          sharedFolderId: folder['id'],
-                          sharedFolderName: folder['name'],
-                          userId: share['shared_by'].toString(),
+                          sharedFolderName: folder['path'],
+                          userId: folder['user_id'].toString(),
                         ),
                       ),
                     );

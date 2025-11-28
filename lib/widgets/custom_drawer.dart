@@ -371,21 +371,21 @@ class _CustomDrawerState extends State<CustomDrawer> {
                         },
                       ),
                     ),
-                    // ListTile(
-                    //   leading: const Icon(Icons.delete_forever),
-                    //   title: const Text("Delete All Images"),
-                    //   trailing: Switch(
-                    //     value: _deleteEnabled,
-                    //     onChanged: (val) {
-                    //       setState(() {
-                    //         _deleteEnabled = val;
-                    //       });
-                    //       if (val) {
-                    //         _confirmDelete();
-                    //       }
-                    //     },
-                    //   ),
-                    // ),
+                    ListTile(
+                      leading: const Icon(Icons.delete_forever),
+                      title: const Text("Delete All Images"),
+                      trailing: Switch(
+                        value: _deleteEnabled,
+                        onChanged: (val) {
+                          setState(() {
+                            _deleteEnabled = val;
+                          });
+                          if (val) {
+                            _confirmDelete();
+                          }
+                        },
+                      ),
+                    ),
                     ListTile(
                       leading: const Icon(Icons.folder_shared),
                       title: const Text("Shared With Me"),
