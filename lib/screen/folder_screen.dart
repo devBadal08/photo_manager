@@ -380,7 +380,10 @@ class _FolderScreenState extends State<FolderScreen>
       builder: (ctx) => Wrap(
         children: [
           ListTile(
-            leading: const Icon(Icons.email, color: Colors.blue),
+            leading: Icon(
+              Icons.email,
+              color: Theme.of(context).colorScheme.secondary,
+            ),
             title: const Text("Share via Email (App Share)"),
             onTap: () async {
               Navigator.pop(ctx); // close bottom sheet
@@ -454,7 +457,10 @@ class _FolderScreenState extends State<FolderScreen>
             },
           ),
           ListTile(
-            leading: const Icon(Icons.share, color: Colors.green),
+            leading: Icon(
+              Icons.share,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             title: const Text("Share via WhatsApp / Bluetooth"),
             onTap: () async {
               Navigator.pop(ctx); // close bottom sheet
@@ -578,10 +584,8 @@ class _FolderScreenState extends State<FolderScreen>
                 duration: const Duration(milliseconds: 400),
                 width: double.infinity,
                 color: percentUsed >= 99.5
-                    ? Colors
-                          .red
-                          .shade400 // Full storage
-                    : Colors.orange.shade400, // Near full
+                    ? Colors.red.shade400
+                    : Theme.of(context).colorScheme.primary,
                 padding: const EdgeInsets.symmetric(
                   vertical: 10,
                   horizontal: 16,
@@ -662,10 +666,10 @@ class _FolderScreenState extends State<FolderScreen>
 
   Widget _buildFolderGrid() {
     if (filteredFolders.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           "No folders found",
-          style: TextStyle(color: Colors.white70),
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
       );
     }
@@ -688,7 +692,11 @@ class _FolderScreenState extends State<FolderScreen>
               vertical: 12,
               horizontal: 16,
             ),
-            leading: const Icon(Icons.folder, size: 40, color: Colors.orange),
+            leading: Icon(
+              Icons.folder,
+              size: 40,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             title: Text(
               folderName,
               style: Theme.of(
@@ -715,19 +723,28 @@ class _FolderScreenState extends State<FolderScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.edit, color: Colors.blueAccent),
+                  icon: Icon(
+                    Icons.edit,
+                    color: Theme.of(context).colorScheme.secondary,
+                  ),
                   onPressed: () {
                     _renameFolder(folder);
                   },
                 ),
                 IconButton(
-                  icon: const Icon(Icons.share, color: Colors.green),
+                  icon: Icon(
+                    Icons.share,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                   onPressed: () {
                     _shareFolder(folder);
                   },
                 ),
                 IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.redAccent),
+                  icon: Icon(
+                    Icons.delete,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
                   onPressed: () {
                     _deleteFolder(folder);
                   },

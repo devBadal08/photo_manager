@@ -33,11 +33,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               // Welcome Text
               Text(
                 'Welcome to ScanVault',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: themeData.textTheme.bodyLarge?.color,
-                ),
+                style: themeData.textTheme.titleLarge, // auto adapts to theme
               ),
               const SizedBox(height: 40),
 
@@ -54,8 +50,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     horizontal: 80,
                     vertical: 16,
                   ),
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white,
+                  backgroundColor: themeData.colorScheme.primary, // ORANGE
+                  foregroundColor:
+                      themeData.colorScheme.onPrimary, // WHITE text auto
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -74,13 +71,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     themeProvider.isDarkMode
                         ? Icons.nightlight_round
                         : Icons.wb_sunny,
+                    color: themeData.colorScheme.secondary, // BLUE
                   ),
                   const SizedBox(width: 8),
-                  Text(themeProvider.isDarkMode ? 'Dark Mode' : 'Light Mode'),
+                  Text(
+                    themeProvider.isDarkMode ? 'Dark Mode' : 'Light Mode',
+                    style: themeData.textTheme.bodyMedium,
+                  ),
                   const SizedBox(width: 8),
                   Switch(
                     value: themeProvider.isDarkMode,
                     onChanged: (val) => themeProvider.toggleTheme(val),
+                    activeColor: themeData.colorScheme.primary, // ORANGE
                   ),
                 ],
               ),

@@ -323,8 +323,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   Widget _buildPdfListCards(List<File> pdfFiles) {
     if (pdfFiles.isEmpty) {
-      return const Center(
-        child: Text("No PDFs yet", style: TextStyle(color: Colors.white70)),
+      return Center(
+        child: Text(
+          "No PDFs yet",
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
       );
     }
 
@@ -360,10 +363,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                       });
                     },
                   )
-                : const Icon(
+                : Icon(
                     Icons.picture_as_pdf,
                     size: 40,
-                    color: Colors.redAccent,
+                    color: Theme.of(context).colorScheme.error,
                   ),
 
             title: Text(
@@ -415,8 +418,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   Widget _buildPdfGridCards(List<dynamic> pdfFiles) {
     if (pdfFiles.isEmpty) {
-      return const Center(
-        child: Text("No PDFs found", style: TextStyle(color: Colors.white70)),
+      return Center(
+        child: Text(
+          "No PDFs found",
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
       );
     }
 
@@ -454,10 +460,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               vertical: 12,
               horizontal: 16,
             ),
-            leading: const Icon(
+            leading: Icon(
               Icons.picture_as_pdf,
               size: 40,
-              color: Colors.redAccent,
+              color: Theme.of(context).colorScheme.error,
             ),
             title: Text(
               pdfName,
@@ -611,7 +617,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
         children: [
           // ======================= EMAIL SHARE =======================
           ListTile(
-            leading: const Icon(Icons.email, color: Colors.blue),
+            leading: Icon(
+              Icons.email,
+              color: Theme.of(context).colorScheme.secondary,
+            ),
             title: const Text("Share Subfolder via Email"),
             onTap: () async {
               Navigator.pop(ctx);
@@ -687,7 +696,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
           // ======================= WHATSAPP / BLUETOOTH SHARE =======================
           ListTile(
-            leading: const Icon(Icons.share, color: Colors.green),
+            leading: Icon(
+              Icons.share,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             title: const Text("Share via WhatsApp / Bluetooth"),
             onTap: () async {
               Navigator.pop(ctx); // close bottom sheet
@@ -1114,13 +1126,19 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             // ✅ New Delete button in selection mode
             if (selectionMode)
               IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
+                icon: Icon(
+                  Icons.delete,
+                  color: Theme.of(context).colorScheme.error,
+                ),
                 onPressed: _deleteSelectedImages,
               ),
 
             if (selectionMode)
               IconButton(
-                icon: const Icon(Icons.share, color: Colors.green),
+                icon: Icon(
+                  Icons.share,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 onPressed: _shareSelectedFiles,
               ),
 
@@ -1514,11 +1532,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                       child: isPdf
                           ? Container(
                               color: Colors.grey[200],
-                              child: const Center(
+                              child: Center(
                                 child: Icon(
                                   Icons.picture_as_pdf,
                                   size: 40,
-                                  color: Colors.red,
+                                  color: Theme.of(context).colorScheme.error,
                                 ),
                               ),
                             )
@@ -1588,7 +1606,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                             }
                           });
                         },
-                        activeColor: Colors.blue,
+                        activeColor: Theme.of(context).colorScheme.secondary,
                         checkColor: Colors.white,
                       ),
                     ),
@@ -1724,11 +1742,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                           : extension == 'pdf'
                           ? Container(
                               color: Colors.grey[200],
-                              child: const Center(
+                              child: Center(
                                 child: Icon(
                                   Icons.picture_as_pdf,
                                   size: 40,
-                                  color: Colors.red,
+                                  color: Theme.of(context).colorScheme.error,
                                 ),
                               ),
                             )
@@ -1808,8 +1826,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   Widget _buildFolderListCards(List<Directory> folders) {
     if (folders.isEmpty) {
-      return const Center(
-        child: Text("No folders yet", style: TextStyle(color: Colors.white70)),
+      return Center(
+        child: Text(
+          "No folders yet",
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
       );
     }
 
@@ -1831,7 +1852,11 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               vertical: 12,
               horizontal: 16,
             ),
-            leading: const Icon(Icons.folder, size: 40, color: Colors.orange),
+            leading: Icon(
+              Icons.folder,
+              size: 40,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             title: Text(
               folderName,
               style: Theme.of(
@@ -1860,16 +1885,25 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.edit, color: Colors.blueAccent),
+                  icon: Icon(
+                    Icons.edit,
+                    color: Theme.of(context).colorScheme.secondary,
+                  ),
                   onPressed: () => _renameFolder(folder),
                 ),
                 if (!widget.isShared)
                   IconButton(
-                    icon: const Icon(Icons.share, color: Colors.green),
+                    icon: Icon(
+                      Icons.share,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                     onPressed: () => _shareSubFolder(folder),
                   ),
                 IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.redAccent),
+                  icon: Icon(
+                    Icons.delete,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
                   onPressed: () => _deleteFolder(folder),
                 ),
               ],
@@ -1946,10 +1980,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
   Widget _buildSharedFolders() {
     if (apiFolders.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           "No shared subfolders found",
-          style: TextStyle(color: Colors.white70),
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
       );
     }
@@ -1979,8 +2013,12 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               horizontal: 16,
             ),
 
-            // ❌ removed trailing icons
-            leading: const Icon(Icons.folder, size: 40, color: Colors.orange),
+            // removed trailing icons
+            leading: Icon(
+              Icons.folder,
+              size: 40,
+              color: Theme.of(context).colorScheme.primary,
+            ),
 
             title: Text(
               folderName,
