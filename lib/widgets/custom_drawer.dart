@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:photomanager_practice/screen/folder_screen.dart';
 import 'package:photomanager_practice/screen/shared_with_me_screen.dart';
 import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'package:photomanager_practice/widgets/diceBearAvatar.dart';
@@ -38,6 +40,9 @@ class _CustomDrawerState extends State<CustomDrawer> {
 
   String? _companyLogo;
   String? _avatarSeed;
+  String? _userEmail;
+  List<dynamic> _companies = [];
+  int? _selectedCompanyId;
 
   @override
   void initState() {
@@ -46,6 +51,25 @@ class _CustomDrawerState extends State<CustomDrawer> {
     _loadSettings();
     _loadCompanyLogo();
     _loadAvatarSeed();
+    _loadUserEmail();
+    _loadCompanies();
+  }
+
+  Future<void> _loadUserEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _userEmail = prefs.getString("email"));
+  }
+
+  Future<void> _loadCompanies() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonList = prefs.getString("companies");
+
+    if (jsonList != null) {
+      setState(() {
+        _companies = List<dynamic>.from(jsonDecode(jsonList));
+        _selectedCompanyId = prefs.getInt("selected_company_id");
+      });
+    }
   }
 
   Future<void> _loadAvatarSeed() async {
@@ -72,6 +96,91 @@ class _CustomDrawerState extends State<CustomDrawer> {
     }
   }
 
+  Widget _buildDrawerHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 16),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _openAvatarPicker,
+            child: CircleAvatar(
+              radius: 26,
+              backgroundImage: widget.avatarImage != null
+                  ? FileImage(widget.avatarImage!)
+                  : null,
+              child: widget.avatarImage == null
+                  ? DiceBearAvatar(
+                      seed: _avatarSeed ?? widget.userName,
+                      size: 52,
+                    )
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _userEmail ?? "",
+                style: const TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompanySelector() {
+    if (_companies.isEmpty) return SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: DropdownButtonFormField<int>(
+        value: _selectedCompanyId,
+        decoration: InputDecoration(
+          labelText: "Select Company",
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        items: _companies.map((company) {
+          return DropdownMenuItem(
+            value: company["id"] as int,
+            child: Text(company["company_name"].toString()),
+          );
+        }).toList(),
+        onChanged: (val) async {
+          if (val == null) return;
+          _selectedCompanyId = val;
+
+          final prefs = await SharedPreferences.getInstance();
+          prefs.setInt("selected_company_id", val);
+
+          Navigator.pop(context);
+          Navigator.pushReplacement(
+            widget.parentContext,
+            MaterialPageRoute(
+              builder: (_) {
+                return FolderScreen(userId: prefs.getString("user_id")!);
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget drawerItem({
+    required IconData icon,
+    required String text,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.deepPurple),
+      title: Text(text, style: const TextStyle(fontSize: 16)),
+      onTap: onTap,
+    );
+  }
+
   Future<void> _loadCompanyLogo() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -81,7 +190,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
         if (logo.startsWith("http")) {
           _companyLogo = logo; // full URL
         } else {
-          _companyLogo = "http://192.168.1.13:8000/storage/company-logos/$logo";
+          _companyLogo = "http://192.168.1.4:8000/storage/company-logos/$logo";
         }
       }
     });
@@ -309,47 +418,28 @@ class _CustomDrawerState extends State<CustomDrawer> {
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Consumer<ThemeProvider>(
               builder: (context, themeProvider, _) {
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
+                return ListView(
+                  padding: EdgeInsets.zero,
                   children: [
+                    _buildDrawerHeader(),
+
                     if (_companyLogo != null)
                       Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.network(
-                            _companyLogo!,
-                            height: 80,
-                            fit: BoxFit.contain,
-                          ),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Image.network(
+                          _companyLogo!,
+                          height: 60,
+                          fit: BoxFit.contain,
                         ),
                       ),
-                    ListTile(
-                      leading: GestureDetector(
-                        onTap: _openAvatarPicker,
-                        child: widget.avatarImage != null
-                            ? CircleAvatar(
-                                radius: 24,
-                                backgroundImage: FileImage(widget.avatarImage!),
-                              )
-                            : DiceBearAvatar(
-                                seed: _avatarSeed ?? widget.userName,
-                                size: 48,
-                              ),
-                      ),
-                      title: Text(
-                        widget.userName,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                      ),
-                    ),
+
+                    _buildCompanySelector(),
 
                     const Divider(),
-                    ListTile(
-                      leading: const Icon(Icons.person),
-                      title: const Text("User Profile"),
+
+                    drawerItem(
+                      icon: Icons.person,
+                      text: "User Profile",
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(
@@ -360,37 +450,24 @@ class _CustomDrawerState extends State<CustomDrawer> {
                         );
                       },
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.cloud_upload),
-                      title: const Text("Auto Upload"),
-                      trailing: Switch(
-                        value: AutoUploadService.instance.isEnabled,
-                        onChanged: (val) async {
-                          await AutoUploadService.instance.setAutoUpload(val);
-                          setState(() {}); // refresh the toggle UI
-                        },
-                      ),
+
+                    drawerItem(
+                      icon: Icons.cloud_upload,
+                      text: "Auto Upload",
+                      onTap: () {},
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.delete_forever),
-                      title: const Text("Delete All Images"),
-                      trailing: Switch(
-                        value: _deleteEnabled,
-                        onChanged: (val) {
-                          setState(() {
-                            _deleteEnabled = val;
-                          });
-                          if (val) {
-                            _confirmDelete();
-                          }
-                        },
-                      ),
+
+                    drawerItem(
+                      icon: Icons.delete_forever,
+                      text: "Delete All Images",
+                      onTap: () => _confirmDelete(),
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.folder_shared),
-                      title: const Text("Shared With Me"),
+
+                    drawerItem(
+                      icon: Icons.folder_shared,
+                      text: "Shared With Me",
                       onTap: () {
-                        Navigator.pop(context); // close drawer
+                        Navigator.pop(context);
                         Navigator.push(
                           widget.parentContext,
                           MaterialPageRoute(
@@ -399,29 +476,22 @@ class _CustomDrawerState extends State<CustomDrawer> {
                         );
                       },
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.logout),
-                      title: const Text("Logout"),
-                      onTap: () {
-                        _showLogoutDialog(context);
-                      },
+
+                    drawerItem(
+                      icon: Icons.brightness_6,
+                      text: themeProvider.isDarkMode
+                          ? "Dark Mode"
+                          : "Light Mode",
+                      onTap: () =>
+                          themeProvider.toggleTheme(!themeProvider.isDarkMode),
                     ),
+
                     const Divider(),
-                    ListTile(
-                      leading: Icon(
-                        themeProvider.isDarkMode
-                            ? Icons.nightlight_round
-                            : Icons.wb_sunny,
-                      ),
-                      title: Text(
-                        themeProvider.isDarkMode ? 'Dark Mode' : 'Light Mode',
-                      ),
-                      trailing: Switch(
-                        value: themeProvider.isDarkMode,
-                        onChanged: (val) {
-                          themeProvider.toggleTheme(val);
-                        },
-                      ),
+
+                    drawerItem(
+                      icon: Icons.logout,
+                      text: "Log Out",
+                      onTap: () => _showLogoutDialog(context),
                     ),
                   ],
                 );

@@ -100,7 +100,7 @@ class _FolderScreenState extends State<FolderScreen>
 
   Future<void> _checkCompanyStorageUsage() async {
     try {
-      final url = Uri.parse('http://192.168.1.13:8000/api/storage-usage');
+      final url = Uri.parse('http://192.168.1.4:8000/api/storage-usage');
       final token = await folderService.getAuthToken();
 
       if (token == null || token.isEmpty) return;

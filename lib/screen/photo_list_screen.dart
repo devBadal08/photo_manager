@@ -440,7 +440,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
         // Build correct URL if shared
         final String? pdfUrl = isShared
-            ? (pdf['url'] ?? "http://192.168.1.13:8000/storage/${pdf['path']}")
+            ? (pdf['url'] ?? "http://192.168.1.4:8000/storage/${pdf['path']}")
             : null;
 
         return Card(
@@ -1390,7 +1390,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             final isLocal = photo['local'] == true;
             final localPath = photo['path'];
             final serverPath =
-                "http://192.168.1.13:8000/storage/${photo['path']}";
+                "http://192.168.1.4:8000/storage/${photo['path']}";
             final filename = localPath.split('/').last;
             final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
             final isSelected = selectedImages.contains(localPath);
@@ -1430,7 +1430,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                     if (isShared) {
                       // 🟩 OPEN PDF DIRECTLY FROM SERVER (not local)
                       final pdfUrl =
-                          "http://192.168.1.13:8000/storage/${photo['path']}";
+                          "http://192.168.1.4:8000/storage/${photo['path']}";
                       print("🌐 Opening shared PDF from server: $pdfUrl");
 
                       Navigator.push(
@@ -1483,7 +1483,7 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                       if (p['local'] == true) {
                         return File(p['path']); // local image / video / pdf
                       } else {
-                        return "http://192.168.1.13:8000/storage/${p['path']}"; // server
+                        return "http://192.168.1.4:8000/storage/${p['path']}"; // server
                       }
                     }).toList();
 
