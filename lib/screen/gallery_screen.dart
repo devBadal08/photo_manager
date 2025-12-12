@@ -2,6 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:photomanager_practice/screen/image_editor_screen.dart';
 import 'package:photomanager_practice/screen/photo_list_screen.dart';
+import 'package:photomanager_practice/screen/video_network_player_screen.dart';
+import 'package:photomanager_practice/screen/video_player_screen.dart';
+import 'package:photomanager_practice/widgets/video_thumb_widget.dart';
 import 'package:video_player/video_player.dart'; // 👈 for video playback
 
 class GalleryScreen extends StatefulWidget {
@@ -127,106 +130,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       : Image.network(path, fit: BoxFit.cover)),
           );
         },
-      ),
-    );
-  }
-}
-
-/// ==================== VideoPlayerScreen ====================
-class VideoPlayerScreen extends StatefulWidget {
-  final File videoFile;
-  const VideoPlayerScreen({super.key, required this.videoFile});
-
-  @override
-  State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
-}
-
-class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
-  late VideoPlayerController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.file(widget.videoFile)
-      ..initialize().then((_) {
-        setState(() {});
-        _controller.play();
-      });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Video")),
-      body: Center(
-        child: _controller.value.isInitialized
-            ? AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: VideoPlayer(_controller),
-              )
-            : const CircularProgressIndicator(),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          setState(() {
-            _controller.value.isPlaying
-                ? _controller.pause()
-                : _controller.play();
-          });
-        },
-        child: Icon(
-          _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
-        ),
-      ),
-    );
-  }
-}
-
-class VideoNetworkPlayerScreen extends StatefulWidget {
-  final String videoUrl;
-  const VideoNetworkPlayerScreen({super.key, required this.videoUrl});
-
-  @override
-  State<VideoNetworkPlayerScreen> createState() =>
-      _VideoNetworkPlayerScreenState();
-}
-
-class _VideoNetworkPlayerScreenState extends State<VideoNetworkPlayerScreen> {
-  late VideoPlayerController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
-      ..initialize().then((_) {
-        setState(() {});
-        _controller.play();
-      });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Video")),
-      body: Center(
-        child: _controller.value.isInitialized
-            ? AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: VideoPlayer(_controller),
-              )
-            : const CircularProgressIndicator(),
       ),
     );
   }

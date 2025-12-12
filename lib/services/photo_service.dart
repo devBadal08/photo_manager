@@ -43,11 +43,15 @@ class PhotoService {
     required String folderName,
     required String token,
   }) async {
-    final url = Uri.parse('http://192.168.1.4:8000/api/photos/uploadAll');
+    final url = Uri.parse('http://192.168.1.10:8000/api/photos/uploadAll');
 
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final companyId = prefs.getInt('selected_company_id');
+
       final request = http.MultipartRequest('POST', url)
         ..headers['Authorization'] = 'Bearer $token'
+        ..fields['company_id'] = companyId.toString()
         ..fields['folders[0]'] = folderName
         ..files.add(
           await http.MultipartFile.fromPath('images[0]', imageFile.path),
@@ -215,6 +219,7 @@ class PhotoService {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('user_id');
     final token = prefs.getString('auth_token');
+    final companyId = prefs.getInt('selected_company_id');
 
     if (userId == null || token == null) {
       if (!silent && context != null && context.mounted) {
@@ -225,7 +230,10 @@ class PhotoService {
       return;
     }
 
-    final baseDir = Directory('/storage/emulated/0/Pictures/MyApp/$userId');
+    final baseDir = Directory(
+      '/storage/emulated/0/Pictures/MyApp/$companyId/$userId',
+    );
+
     //final baseDir = await PhotoService.getBaseDir();
 
     if (!await baseDir.exists()) {
@@ -346,7 +354,13 @@ class PhotoService {
 
     try {
       // ✅ STEP 1: Check storage usage BEFORE showing loader
-      final checkUrl = Uri.parse('http://192.168.1.4:8000/api/storage-usage');
+      final prefs = await SharedPreferences.getInstance();
+      final selectedCompanyId = prefs.getInt("selected_company_id");
+
+      final checkUrl = Uri.parse(
+        'http://192.168.1.10:8000/api/storage-usage?company_id=$selectedCompanyId',
+      );
+
       final checkResponse = await http.get(
         checkUrl,
         headers: {
@@ -429,9 +443,12 @@ class PhotoService {
 
         final request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://192.168.1.4:8000/api/photos/uploadAll'),
+          Uri.parse('http://192.168.1.10:8000/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
+
+        // Add company_id so Laravel can route correctly
+        request.fields['company_id'] = companyId.toString();
 
         for (int i = 0; i < batch.length; i++) {
           final file = batch[i].key;

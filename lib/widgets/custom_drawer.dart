@@ -122,7 +122,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
             children: [
               Text(
                 _userEmail ?? "",
-                style: Theme.of(context).textTheme.bodyMedium,
+                style: const TextStyle(fontSize: 14, color: Colors.grey),
               ),
             ],
           ),
@@ -175,7 +175,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
     required VoidCallback onTap,
   }) {
     return ListTile(
-      leading: Icon(icon, color: Theme.of(context).colorScheme.secondary),
+      leading: Icon(icon, color: Colors.deepPurple),
       title: Text(text, style: const TextStyle(fontSize: 16)),
       onTap: onTap,
     );
@@ -186,12 +186,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
     setState(() {
       final logo = prefs.getString('company_logo');
       if (logo != null && logo.isNotEmpty) {
-        // Make sure the path is correct on server
-        if (logo.startsWith("http")) {
-          _companyLogo = logo; // full URL
-        } else {
-          _companyLogo = "http://192.168.1.4:8000/storage/company-logos/$logo";
-        }
+        _companyLogo = logo; // always full URL saved from login
       }
     });
   }
@@ -451,25 +446,10 @@ class _CustomDrawerState extends State<CustomDrawer> {
                       },
                     ),
 
-                    SwitchListTile(
-                      title: const Text("Auto Upload"),
-                      secondary: Icon(
-                        Icons.cloud_upload,
-                        color: Theme.of(context).colorScheme.secondary,
-                      ),
-                      value: _autoUploadEnabled,
-                      onChanged: (value) async {
-                        setState(() => _autoUploadEnabled = value);
-                        await _saveSettings();
-
-                        if (value) {
-                          _startAutoUploadListener();
-                          await AutoUploadService.instance.setAutoUpload(true);
-                        } else {
-                          _stopAutoUploadListener();
-                          await AutoUploadService.instance.setAutoUpload(false);
-                        }
-                      },
+                    drawerItem(
+                      icon: Icons.cloud_upload,
+                      text: "Auto Upload",
+                      onTap: () {},
                     ),
 
                     drawerItem(

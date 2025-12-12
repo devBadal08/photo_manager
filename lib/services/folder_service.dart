@@ -92,16 +92,16 @@ class FolderService {
       await baseDir.create(recursive: true);
     }
 
-    return baseDir
-        .listSync()
-        .whereType<Directory>()
-        .where((dir) => !dir.path.contains('/flutter_assets'))
-        .toList();
+    return baseDir.listSync().whereType<Directory>().toList();
   }
 
   Future<bool> createFolder(String folderName) async {
     final baseDir = await _getBaseFolder();
     if (baseDir == null) return false;
+
+    if (!await baseDir.exists()) {
+      await baseDir.create(recursive: true);
+    }
 
     final dir = Directory('${baseDir.path}/$folderName');
 
@@ -114,14 +114,15 @@ class FolderService {
   Future<Directory?> _getBaseFolder() async {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('user_id');
-    if (userId == null) return null;
+    final companyId = prefs.getInt('selected_company_id');
+
+    if (userId == null || companyId == null) return null;
 
     if (Platform.isAndroid) {
-      return Directory('/storage/emulated/0/Pictures/MyApp/$userId');
+      return Directory('/storage/emulated/0/Pictures/MyApp/$companyId/$userId');
     } else {
-      // iOS path
       final docDir = await getApplicationDocumentsDirectory();
-      return Directory('${docDir.path}/MyApp/$userId');
+      return Directory('${docDir.path}/MyApp/$companyId/$userId');
     }
   }
 

@@ -36,7 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> login(String email, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('http://192.168.1.4:8000/api/login'),
+        Uri.parse('http://192.168.1.10:8000/api/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );
@@ -47,21 +47,38 @@ class _LoginScreenState extends State<LoginScreen> {
         final userId = data['user']['id'].toString();
         final userName = data['user']['name'];
         final userEmail = data['user']['email'];
-        final company = data['user']['company'];
-        final rawLogo = company?['company_logo'];
-        final baseUrl = "http://192.168.1.4:8000/storage/";
-        final companyLogo = rawLogo != null ? "$baseUrl$rawLogo" : null;
         final prefs = await SharedPreferences.getInstance();
+
+        final companies = data['user']['companies'] ?? [];
+
+        // Save full companies list
+        prefs.setString("companies", jsonEncode(companies));
+
+        if (companies.isNotEmpty) {
+          // Default selected company = first company
+          prefs.setInt("selected_company_id", companies[0]["id"]);
+
+          // Save the logo of selected company
+          final rawLogo = companies[0]["company_logo"];
+          if (rawLogo != null && rawLogo.isNotEmpty) {
+            prefs.setString(
+              "company_logo",
+              "http://192.168.1.10:8000/storage/$rawLogo",
+            );
+          } else {
+            prefs.remove("company_logo");
+          }
+        } else {
+          // No companies assigned
+          prefs.remove("selected_company_id");
+          prefs.remove("company_logo");
+        }
+
         await prefs.setString('auth_token', token ?? '');
         await prefs.setString('user_id', userId);
         await prefs.setString('user_name', userName ?? '');
         await prefs.setString('email', userEmail ?? '');
-        await prefs.setString('password', password); // save password
-        if (companyLogo != null) {
-          prefs.setString('company_logo', companyLogo);
-        } else {
-          prefs.remove('company_logo');
-        }
+        await prefs.setString('password', password);
 
         Navigator.push(
           context,
@@ -99,6 +116,9 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       print("Error: $e");
+
+      if (!mounted) return;
+
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
@@ -172,19 +192,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   // Email
                   TextField(
                     controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
                     decoration: InputDecoration(
                       labelText: "Email",
-                      prefixIcon: Icon(
-                        Icons.email,
-                        color: colorScheme.secondary,
-                      ),
+                      prefixIcon: const Icon(Icons.email),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
                       focusedBorder: OutlineInputBorder(
-                        borderSide: BorderSide(
-                          color: colorScheme.primary,
-                        ), // ORANGE
+                        borderSide: BorderSide(color: Colors.deepPurple),
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
@@ -197,26 +213,24 @@ class _LoginScreenState extends State<LoginScreen> {
                     obscureText: _obscurePassword,
                     decoration: InputDecoration(
                       labelText: "Password",
-                      prefixIcon: Icon(
-                        Icons.lock,
-                        color: colorScheme.secondary,
-                      ),
+                      prefixIcon: const Icon(Icons.lock),
                       suffixIcon: IconButton(
                         icon: Icon(
                           _obscurePassword
                               ? Icons.visibility_off
                               : Icons.visibility,
-                          color: colorScheme.secondary,
                         ),
                         onPressed: () {
-                          setState(() => _obscurePassword = !_obscurePassword);
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
                         },
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
                       focusedBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: colorScheme.primary),
+                        borderSide: BorderSide(color: Colors.deepPurple),
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
@@ -240,7 +254,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: colorScheme.primary,
-                      foregroundColor: colorScheme.onPrimary,
+                      foregroundColor: Colors.black,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 80,
                         vertical: 16,

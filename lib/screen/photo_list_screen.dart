@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:photomanager_practice/helpers/dialog_helpers.dart';
 import 'package:photomanager_practice/screen/camera_screen.dart';
 import 'package:photomanager_practice/screen/gallery_screen.dart';
 import 'package:photomanager_practice/screen/pdf_viewer_screen.dart';
@@ -9,10 +10,20 @@ import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
+import 'package:photomanager_practice/services/folder_stat_service.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
+import 'package:photomanager_practice/widgets/pdf_grid_cards.dart';
+import 'package:photomanager_practice/widgets/pdf_list_cards.dart';
+import 'package:photomanager_practice/widgets/shared_folder_list.dart';
+import 'package:photomanager_practice/widgets/video_thumb_widget.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart' as vt;
+import 'package:photomanager_practice/widgets/image_grid.dart';
+import 'package:photomanager_practice/widgets/api_image_grid.dart';
+import 'package:photomanager_practice/widgets/folder_list_cards.dart';
+import 'package:photomanager_practice/screen/video_player_screen.dart';
+import 'package:photomanager_practice/screen/video_network_player_screen.dart';
 
 class PhotoListScreen extends StatefulWidget {
   final Directory? folder;
@@ -111,66 +122,81 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     );
     if (!await dir.exists()) await dir.create(recursive: true);
 
-    // Get uploaded files set
     final uploadedSet = PhotoService.uploadedFiles.value;
 
-    // Filter newly taken photos: keep all local photos that are not yet uploaded
     final filteredNewPhotos = _newlyTakenPhotos.where((p) {
       return p['local'] == true && !uploadedSet.contains(p['path']);
     }).toList();
 
-    // Server photos
     final service = FolderShareService();
     final data = subfolderPath != null
         ? await service.getSharedFolderByPath(subfolderPath)
         : await service.getSharedFolderPhotos(folderId);
 
-    List<Map<String, dynamic>> serverPhotos = [];
-    if (data != null && data['success'] == true) {
-      // ✅ MAIN FOLDER FILES
-      if (data['photos'] != null) {
-        serverPhotos = List<Map<String, dynamic>>.from(data['photos'])
-            .map((p) => {"path": p['path'], "url": p['url'], "local": false})
-            .toList();
-      }
-
-      // ✅ SUBFOLDERS
-      if (data['folders'] != null) {
-        apiFolders = List<Map<String, dynamic>>.from(data['folders']);
-      }
-      print("📁 Shared subfolders: ${apiFolders.length}");
-    }
-
-    // Merge newly taken + server photos
-    final allPhotos = [...filteredNewPhotos, ...serverPhotos];
-
-    // Deduplicate by filename to avoid duplicates, prefer local
-    final uniquePhotos = <String, Map<String, dynamic>>{};
-    for (var photo in allPhotos) {
-      final filename = photo['path'].split('/').last.toLowerCase();
-      if (!uniquePhotos.containsKey(filename) || photo['local'] == true) {
-        uniquePhotos[filename] = photo;
-      }
-    }
-
-    // Split into apiPhotos (images/videos) and apiPdfFiles (pdfs)
-    final tempList = uniquePhotos.values.toList();
+    // Declare list BEFORE using
     final imagesAndVideos = <Map<String, dynamic>>[];
     final pdfs = <Map<String, dynamic>>[];
 
-    for (var p in tempList) {
-      final path = p['path'] as String;
-      final ext = path.split('.').last.toLowerCase();
+    if (data != null && data['success'] == true) {
+      // images & videos
+      if (data['photos'] != null) {
+        imagesAndVideos.addAll(
+          List<Map<String, dynamic>>.from(
+            data['photos'],
+          ).map((p) => {"path": p['path'], "url": p['url'], "local": false}),
+        );
+      }
+
+      // PDFs (backend should return "pdfs" or update endpoint)
+      if (data['pdfs'] != null) {
+        pdfs.addAll(
+          List<Map<String, dynamic>>.from(
+            data['pdfs'],
+          ).map((p) => {"path": p['path'], "url": p['url'], "local": false}),
+        );
+      }
+
+      // subfolders
+      if (data['folders'] != null) {
+        apiFolders = List<Map<String, dynamic>>.from(data['folders']);
+      }
+    }
+
+    // Add new local photos (not uploaded yet)
+    for (var photo in filteredNewPhotos) {
+      final ext = photo['path'].split('.').last.toLowerCase();
       if (ext == 'pdf') {
-        pdfs.add(p);
+        pdfs.add(photo);
       } else {
-        imagesAndVideos.add(p);
+        imagesAndVideos.add(photo);
+      }
+    }
+
+    // Remove duplicates (prefer local)
+    final unique = <String, Map<String, dynamic>>{};
+    for (var item in [...imagesAndVideos, ...pdfs]) {
+      final filename = item['path'].split('/').last.toLowerCase();
+      if (!unique.containsKey(filename) || item['local'] == true) {
+        unique[filename] = item;
+      }
+    }
+
+    // Re-split after unique filtering
+    final finalImagesAndVideos = <Map<String, dynamic>>[];
+    final finalPdfs = <Map<String, dynamic>>[];
+
+    for (var item in unique.values) {
+      final ext = item['path'].split('.').last.toLowerCase();
+      if (ext == 'pdf') {
+        finalPdfs.add(item);
+      } else {
+        finalImagesAndVideos.add(item);
       }
     }
 
     setState(() {
-      apiPhotos = imagesAndVideos;
-      apiPdfFiles = pdfs;
+      apiPhotos = finalImagesAndVideos;
+      apiPdfFiles = finalPdfs;
     });
   }
 
@@ -321,186 +347,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     });
   }
 
-  Widget _buildPdfListCards(List<File> pdfFiles) {
-    if (pdfFiles.isEmpty) {
-      return Center(
-        child: Text(
-          "No PDFs yet",
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: pdfFiles.length,
-      itemBuilder: (context, index) {
-        final pdfFile = pdfFiles[index];
-        final pdfName = pdfFile.path.split('/').last;
-
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 4,
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 12,
-              horizontal: 16,
-            ),
-
-            leading: selectionMode
-                ? Checkbox(
-                    value: selectedImages.contains(pdfFile.path),
-                    onChanged: (checked) {
-                      setState(() {
-                        if (checked == true) {
-                          selectedImages.add(pdfFile.path);
-                        } else {
-                          selectedImages.remove(pdfFile.path);
-                        }
-                      });
-                    },
-                  )
-                : Icon(
-                    Icons.picture_as_pdf,
-                    size: 40,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-
-            title: Text(
-              pdfName,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-
-            trailing: selectionMode
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.edit_note, color: Colors.blueAccent),
-                    onPressed: () => _renamePdf(pdfFile),
-                  ),
-
-            onLongPress: () {
-              setState(() {
-                selectionMode = true;
-                if (!selectedImages.contains(pdfFile.path)) {
-                  selectedImages.add(pdfFile.path);
-                }
-              });
-            },
-
-            onTap: () {
-              if (selectionMode) {
-                setState(() {
-                  if (selectedImages.contains(pdfFile.path)) {
-                    selectedImages.remove(pdfFile.path);
-                  } else {
-                    selectedImages.add(pdfFile.path);
-                  }
-                });
-              } else {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => PdfViewerScreen(pdfFile: pdfFile),
-                  ),
-                );
-              }
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildPdfGridCards(List<dynamic> pdfFiles) {
-    if (pdfFiles.isEmpty) {
-      return Center(
-        child: Text(
-          "No PDFs found",
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: pdfFiles.length,
-      itemBuilder: (context, index) {
-        final pdf = pdfFiles[index];
-        final pdfName = pdf is File
-            ? pdf.path.split('/').last
-            : pdf['name'] ?? pdf['path'].split('/').last;
-        final pdfPath = pdf is File ? pdf.path : pdf['url'] ?? pdf['path'];
-        final isSelected = selectedImages.contains(pdfPath);
-
-        // Detect whether it's a shared (server) PDF or a local file
-        final bool isShared =
-            pdf is Map &&
-            ((pdf['url'] != null &&
-                    (pdf['url'] as String).startsWith('http')) ||
-                !(pdfPath.toString().startsWith('/storage')));
-
-        // Build correct URL if shared
-        final String? pdfUrl = isShared
-            ? (pdf['url'] ?? "http://192.168.1.4:8000/storage/${pdf['path']}")
-            : null;
-
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 4,
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 12,
-              horizontal: 16,
-            ),
-            leading: Icon(
-              Icons.picture_as_pdf,
-              size: 40,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            title: Text(
-              pdfName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit_note, color: Colors.blueAccent),
-                  onPressed: pdf is File ? () => _renamePdf(pdf) : null,
-                ),
-              ],
-            ),
-            onTap: () {
-              print("📄 Opening PDF: $pdfName");
-              print("🧠 isShared=$isShared | pdfPath=$pdfPath");
-
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PdfViewerScreen(
-                    pdfFile: isShared ? pdfUrl! : File(pdfPath),
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
   Future<void> _renameFolder(Directory folder) async {
     final TextEditingController controller = TextEditingController();
 
@@ -577,33 +423,21 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   }
 
   Future<void> _deleteFolder(Directory folder) async {
-    final shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Folder'),
-        content: const Text('Are you sure you want to delete this folder?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final shouldDelete = await DialogHelpers.showConfirmDialog(
+      context,
+      title: "Delete Folder",
+      message: "Are you sure you want to delete this folder?",
     );
 
-    if (shouldDelete == true) {
-      try {
-        await folder.delete(recursive: true);
-        _loadItems(); // Refresh UI
-      } catch (e) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error deleting folder: $e')));
-      }
+    if (!mounted || !shouldDelete) return;
+
+    try {
+      await folder.delete(recursive: true);
+      _loadItems();
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error deleting folder: $e')));
     }
   }
 
@@ -853,54 +687,15 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       return;
     }
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Delete Uploaded Images"),
-        content: Text(
+    final confirm = await DialogHelpers.showConfirmDialog(
+      context,
+      title: "Delete Uploaded Images",
+      message:
           "Delete ${selectedImages.length} selected images?\n\n"
-          "Only images that are uploaded will be deleted.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Delete"),
-          ),
-        ],
-      ),
+          "Only uploaded images will be deleted.",
     );
 
-    if (confirm == true) {
-      final uploadedSet = PhotoService.uploadedFiles.value;
-      int deletedCount = 0;
-
-      for (final file in selectedImages) {
-        if (uploadedSet.contains(file)) {
-          // ✅ only delete uploaded ones
-          try {
-            await File(file).delete();
-            deletedCount++;
-          } catch (e) {
-            debugPrint("Error deleting ${file}: $e");
-          }
-        }
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Deleted $deletedCount uploaded images")),
-      );
-
-      setState(() {
-        selectionMode = false;
-        selectedImages.clear();
-      });
-
-      _loadItems(); // refresh grid
-    }
+    if (!confirm) return;
   }
 
   Future<void> _openScanScreen() async {
@@ -1218,7 +1013,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                 children: [
                   // --- Folders Page ---
                   widget.isShared
-                      ? _buildSharedFolders()
+                      ? SharedFolderList(
+                          folders: apiFolders,
+                          userId: widget.userId,
+                        )
                       : (folderItems.isEmpty
                             ? Center(
                                 child: Text(
@@ -1226,7 +1024,17 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                   style: textTheme.bodyMedium,
                                 ),
                               )
-                            : _buildFolderListCards(filteredFolders)),
+                            : FolderListCards(
+                                folders: filteredFolders,
+                                userId: widget.userId,
+                                selectedFolder: widget.selectedFolder,
+                                folderBackendId: widget.folderBackendId,
+                                countFolderStats:
+                                    FolderStatService.getFolderStats,
+                                onRename: _renameFolder,
+                                onDelete: _deleteFolder,
+                                onShare: _shareSubFolder,
+                              )),
 
                   // --- Images Page ---
                   widget.isShared
@@ -1237,7 +1045,22 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                   style: textTheme.bodyMedium,
                                 ),
                               )
-                            : _buildApiImageGrid(apiPhotos))
+                            : ApiImageGrid(
+                                photos: apiPhotos,
+                                uploadedSet: PhotoService.uploadedFiles.value,
+                                selectionMode: selectionMode,
+                                selectedImages: selectedImages,
+                                onToggleSelect: (path) {
+                                  setState(() {
+                                    if (selectedImages.contains(path)) {
+                                      selectedImages.remove(path);
+                                    } else {
+                                      selectedImages.add(path);
+                                    }
+                                  });
+                                },
+                                sharedFolderId: widget.sharedFolderId,
+                              ))
                       : (imageItems.isEmpty
                             ? Center(
                                 child: Text(
@@ -1245,10 +1068,22 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                   style: textTheme.bodyMedium,
                                 ),
                               )
-                            : _buildImageGrid(
-                                imageItems
+                            : ImageGrid(
+                                files: imageItems
                                     .where((f) => !isPdf(f.path))
                                     .toList(),
+                                selectionMode: selectionMode,
+                                selectedImages: selectedImages,
+                                uploadedSet: PhotoService.uploadedFiles,
+                                onToggleSelect: (path) {
+                                  setState(() {
+                                    if (selectedImages.contains(path)) {
+                                      selectedImages.remove(path);
+                                    } else {
+                                      selectedImages.add(path);
+                                    }
+                                  });
+                                },
                               )),
 
                   // --- PDF Page ---
@@ -1260,8 +1095,35 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                   style: textTheme.bodyMedium,
                                 ),
                               )
-                            : _buildPdfGridCards(apiPdfFiles))
-                      : _buildPdfListCards(pdfFiles),
+                            : PDFGridCards(
+                                pdfFiles: apiPdfFiles,
+                                selectionMode: selectionMode,
+                                selectedImages: selectedImages,
+                                onSelectToggle: (path) {
+                                  setState(() {
+                                    if (selectedImages.contains(path)) {
+                                      selectedImages.remove(path);
+                                    } else {
+                                      selectedImages.add(path);
+                                    }
+                                  });
+                                },
+                              ))
+                      : PDFListCards(
+                          pdfFiles: pdfFiles,
+                          selectionMode: selectionMode,
+                          selectedImages: selectedImages,
+                          onSelectToggle: (path) {
+                            setState(() {
+                              if (selectedImages.contains(path)) {
+                                selectedImages.remove(path);
+                              } else {
+                                selectedImages.add(path);
+                              }
+                            });
+                          },
+                          onRename: _renamePdf,
+                        ),
                 ],
               ),
             ),
@@ -1357,826 +1219,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildApiImageGrid(List<Map<String, dynamic>> photos) {
-    print("🔍 Initial photos received: ${photos.length}");
-    return ValueListenableBuilder<Set<String>>(
-      valueListenable: PhotoService.uploadedFiles,
-      builder: (context, uploadedSet, _) {
-        print("📦 Uploaded files (count: ${uploadedSet.length})");
-        // Step 1: Remove uploaded photos
-        final filteredPhotos = photos.where((p) {
-          final filename = p['path'].split('/').last.toLowerCase();
-          return !uploadedSet.any(
-            (uploaded) => uploaded.toLowerCase().endsWith(filename),
-          );
-        }).toList();
-
-        // Step 2: Remove duplicate filenames, prefer local copies
-        final Map<String, Map<String, dynamic>> uniquePhotos = {};
-        for (var p in filteredPhotos) {
-          final filename = p['path'].split('/').last.toLowerCase();
-          if (!uniquePhotos.containsKey(filename) || p['local'] == true) {
-            uniquePhotos[filename] = p;
-          }
-        }
-
-        final displayedPhotos = uniquePhotos.values.toList();
-
-        if (displayedPhotos.isEmpty) {
-          return Center(
-            child: Text(
-              "No files yet in shared folder",
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          );
-        }
-
-        return GridView.builder(
-          padding: const EdgeInsets.all(8),
-          itemCount: displayedPhotos.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 4,
-            mainAxisSpacing: 4,
-          ),
-          itemBuilder: (context, index) {
-            final photo = displayedPhotos[index];
-            final isLocal = photo['local'] == true;
-            final localPath = photo['path'];
-            final serverPath =
-                "http://192.168.1.4:8000/storage/${photo['path']}";
-            final filename = localPath.split('/').last;
-            final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
-            final isSelected = selectedImages.contains(localPath);
-
-            // Detect file type
-            final ext = localPath.split('.').last.toLowerCase();
-            final isPdf = ext == 'pdf';
-            final isVideoFile = isVideo(localPath);
-
-            return GestureDetector(
-              onLongPress: () {
-                setState(() {
-                  selectionMode = true;
-                  if (!selectedImages.contains(localPath)) {
-                    selectedImages.add(localPath);
-                  }
-                });
-              },
-              onTap: () {
-                print("👆 Tapped: $filename | selectionMode: $selectionMode");
-                if (selectionMode) {
-                  setState(() {
-                    if (isSelected) {
-                      selectedImages.remove(localPath);
-                    } else {
-                      selectedImages.add(localPath);
-                    }
-                  });
-                } else {
-                  if (isPdf) {
-                    final isShared = widget.sharedFolderId != null;
-                    final fileName = localPath.split('/').last;
-                    print(
-                      "📄 Opening PDF -> Shared: $isShared | File: $fileName",
-                    );
-
-                    if (isShared) {
-                      // 🟩 OPEN PDF DIRECTLY FROM SERVER (not local)
-                      final pdfUrl =
-                          "http://192.168.1.4:8000/storage/${photo['path']}";
-                      print("🌐 Opening shared PDF from server: $pdfUrl");
-
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PdfViewerScreen(
-                            pdfFile: pdfUrl,
-                            sharedFolderId: widget.sharedFolderId,
-                          ),
-                        ),
-                      );
-
-                      // You’ll modify PdfViewerScreen to accept URLs (next step)
-                    } else {
-                      final fullPath =
-                          '/storage/emulated/0/Pictures/MyApp/${widget.userId}/${widget.folder}/$fileName';
-                      final exists = File(fullPath).existsSync();
-                      print("📂 Local PDF path: $fullPath | Exists: $exists");
-
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PdfViewerScreen(
-                            pdfFile: File(fullPath),
-                            sharedFolderId: widget.sharedFolderId,
-                          ),
-                        ),
-                      );
-                    }
-                  } else if (isVideoFile) {
-                    if (isLocal) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              VideoPlayerScreen(videoFile: File(localPath)),
-                        ),
-                      );
-                    } else {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              VideoNetworkPlayerScreen(videoUrl: serverPath),
-                        ),
-                      );
-                    }
-                  } else {
-                    final galleryItems = displayedPhotos.map<dynamic>((p) {
-                      if (p['local'] == true) {
-                        return File(p['path']); // local image / video / pdf
-                      } else {
-                        return "http://192.168.1.4:8000/storage/${p['path']}"; // server
-                      }
-                    }).toList();
-
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => GalleryScreen(
-                          images: galleryItems,
-                          startIndex: galleryItems.indexWhere((item) {
-                            final itemPath = item is File
-                                ? item.path
-                                : item.toString();
-                            return itemPath.endsWith(
-                              photo['path'].split('/').last,
-                            );
-                          }),
-                        ),
-                      ),
-                    );
-                  }
-                }
-              },
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: isPdf
-                          ? Container(
-                              color: Colors.grey[200],
-                              child: Center(
-                                child: Icon(
-                                  Icons.picture_as_pdf,
-                                  size: 40,
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                              ),
-                            )
-                          : isVideoFile
-                          ? (isLocal
-                                ? VideoThumbWidget(videoPath: localPath)
-                                // ✅ SERVER VIDEO → NO Image.network → show custom video thumbnail box
-                                : Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      Container(color: Colors.black54),
-
-                                      const Center(
-                                        child: Icon(
-                                          Icons.play_circle_fill,
-                                          size: 50,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-
-                                      Positioned(
-                                        bottom: 6,
-                                        right: 6,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 3,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black.withOpacity(
-                                              0.7,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              6,
-                                            ),
-                                          ),
-                                          child: const Text(
-                                            "VIDEO",
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ))
-                          : (isLocal
-                                ? Image.file(File(localPath), fit: BoxFit.cover)
-                                : Image.network(serverPath, fit: BoxFit.cover)),
-                    ),
-                  ),
-                  // Selection checkbox
-                  if (selectionMode)
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: Checkbox(
-                        value: isSelected,
-                        onChanged: (checked) {
-                          setState(() {
-                            if (checked == true) {
-                              selectedImages.add(localPath);
-                            } else {
-                              selectedImages.remove(localPath);
-                            }
-                          });
-                        },
-                        activeColor: Theme.of(context).colorScheme.secondary,
-                        checkColor: Colors.white,
-                      ),
-                    ),
-                  // Uploaded tick
-                  if (isUploaded)
-                    Positioned(
-                      right: 6,
-                      top: 6,
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.green,
-                          shape: BoxShape.circle,
-                        ),
-                        padding: const EdgeInsets.all(4),
-                        child: const Icon(
-                          Icons.check,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-                  // PDF rename button
-                  if (isPdf && isLocal) // ✅ only local PDFs can be renamed
-                    Positioned(
-                      right: 6,
-                      bottom: 6,
-                      child: GestureDetector(
-                        onTap: () => _renamePdf(File(localPath)),
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: Colors.blueAccent,
-                            shape: BoxShape.circle,
-                          ),
-                          padding: const EdgeInsets.all(4),
-                          child: const Icon(
-                            Icons.edit_note,
-                            color: Colors.white,
-                            size: 18,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // Optional: show lock icon for shared
-                  if (isPdf && !isLocal)
-                    Positioned(
-                      right: 6,
-                      bottom: 6,
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        padding: const EdgeInsets.all(4),
-                        child: const Icon(
-                          Icons.lock,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildImageGrid(List<File> files) {
-    return ValueListenableBuilder<Set<String>>(
-      valueListenable: PhotoService.uploadedFiles,
-      builder: (context, uploadedSet, _) {
-        return GridView.builder(
-          padding: const EdgeInsets.all(8),
-          itemCount: files.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 4,
-            mainAxisSpacing: 4,
-          ),
-          itemBuilder: (context, index) {
-            final file = files[index];
-            final isUploaded = uploadedSet.contains(file.path);
-            final isSelected = selectedImages.contains(file.path);
-            final extension = file.path.split('.').last.toLowerCase();
-
-            return GestureDetector(
-              onLongPress: () {
-                setState(() {
-                  selectionMode = true;
-                  selectedImages.add(file.path);
-                });
-              },
-              onTap: () {
-                if (selectionMode) {
-                  setState(() {
-                    if (isSelected) {
-                      selectedImages.remove(file.path);
-                    } else {
-                      selectedImages.add(file.path);
-                    }
-                  });
-                } else {
-                  if (extension == 'pdf') {
-                    // Open PDF
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PdfViewerScreen(pdfFile: file),
-                      ),
-                    );
-                  } else {
-                    // Open image/video in gallery
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            GalleryScreen(images: files, startIndex: index),
-                      ),
-                    );
-                  }
-                }
-              },
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: isVideo(file.path)
-                          ? VideoThumbWidget(videoPath: file.path)
-                          : extension == 'pdf'
-                          ? Container(
-                              color: Colors.grey[200],
-                              child: Center(
-                                child: Icon(
-                                  Icons.picture_as_pdf,
-                                  size: 40,
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                              ),
-                            )
-                          : Image.file(
-                              file,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  const Icon(Icons.broken_image),
-                            ),
-                    ),
-                  ),
-                  if (selectionMode)
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: Checkbox(
-                        value: isSelected,
-                        onChanged: (checked) {
-                          setState(() {
-                            if (checked == true) {
-                              selectedImages.add(file.path);
-                            } else {
-                              selectedImages.remove(file.path);
-                            }
-                          });
-                        },
-                        activeColor: Colors.blue,
-                        checkColor: Colors.white,
-                      ),
-                    ),
-                  if (isUploaded)
-                    Positioned(
-                      right: 6,
-                      top: 6,
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.green,
-                          shape: BoxShape.circle,
-                        ),
-                        padding: const EdgeInsets.all(4),
-                        child: const Icon(
-                          Icons.check,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-                  // PDF rename button
-                  if (extension == 'pdf')
-                    Positioned(
-                      right: 6,
-                      bottom: 6,
-                      child: GestureDetector(
-                        onTap: () => _renamePdf(file),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.blueAccent,
-                            shape: BoxShape.circle,
-                          ),
-                          padding: const EdgeInsets.all(4),
-                          child: const Icon(
-                            Icons.edit_note,
-                            color: Colors.white,
-                            size: 18,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildFolderListCards(List<Directory> folders) {
-    if (folders.isEmpty) {
-      return Center(
-        child: Text(
-          "No folders yet",
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: folders.length,
-      itemBuilder: (context, index) {
-        final folder = folders[index];
-        final folderName = folder.path.split('/').last;
-
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 4,
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 12,
-              horizontal: 16,
-            ),
-            leading: Icon(
-              Icons.folder,
-              size: 40,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            title: Text(
-              folderName,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            subtitle: FutureBuilder<Map<String, int>>(
-              future: _countSingleFolder(folder), // Custom method below
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Text('Loading...');
-                }
-                final subfolderCount = snapshot.data?['subfolders'] ?? 0;
-                final imageCount = snapshot.data?['images'] ?? 0;
-                final videoCount = snapshot.data?['videos'] ?? 0;
-                final pdfCount = snapshot.data?['pdfs'] ?? 0;
-
-                return Text(
-                  'Subfolders: $subfolderCount\n'
-                  'Images: $imageCount   Videos: $videoCount   PDFs: $pdfCount',
-                  style: Theme.of(context).textTheme.bodySmall,
-                );
-              },
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: Icon(
-                    Icons.edit,
-                    color: Theme.of(context).colorScheme.secondary,
-                  ),
-                  onPressed: () => _renameFolder(folder),
-                ),
-                if (!widget.isShared)
-                  IconButton(
-                    icon: Icon(
-                      Icons.share,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    onPressed: () => _shareSubFolder(folder),
-                  ),
-                IconButton(
-                  icon: Icon(
-                    Icons.delete,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  onPressed: () => _deleteFolder(folder),
-                ),
-              ],
-            ),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PhotoListScreen(
-                    folder: folder,
-                    userId: widget.userId,
-                    selectedFolder: widget.selectedFolder,
-                    folderBackendId: widget.folderBackendId,
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  Future<Map<String, int>> _countSingleFolder(Directory folder) async {
-    int subfolderCount = 0;
-    int imageCount = 0;
-    int videoCount = 0;
-    int pdfCount = 0;
-
-    final List<FileSystemEntity> entities = folder.listSync();
-
-    for (FileSystemEntity entity in entities) {
-      if (entity is Directory) {
-        subfolderCount++;
-
-        final subEntities = entity.listSync();
-        for (FileSystemEntity sub in subEntities) {
-          if (sub is File) {
-            final path = sub.path.toLowerCase();
-
-            if (path.endsWith('.jpg') ||
-                path.endsWith('.jpeg') ||
-                path.endsWith('.png')) {
-              imageCount++;
-            } else if (path.endsWith('.mp4')) {
-              videoCount++;
-            } else if (path.endsWith('.pdf')) {
-              pdfCount++;
-            }
-          }
-        }
-      } else if (entity is File) {
-        final path = entity.path.toLowerCase();
-
-        if (path.endsWith('.jpg') ||
-            path.endsWith('.jpeg') ||
-            path.endsWith('.png')) {
-          imageCount++;
-        } else if (path.endsWith('.mp4')) {
-          videoCount++;
-        } else if (path.endsWith('.pdf')) {
-          pdfCount++;
-        }
-      }
-    }
-
-    return {
-      'subfolders': subfolderCount,
-      'images': imageCount,
-      'videos': videoCount,
-      'pdfs': pdfCount,
-    };
-  }
-
-  Widget _buildSharedFolders() {
-    if (apiFolders.isEmpty) {
-      return Center(
-        child: Text(
-          "No shared subfolders found",
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: apiFolders.length,
-      itemBuilder: (context, index) {
-        final folder = apiFolders[index];
-
-        final folderName = folder['name'] ?? 'Unnamed';
-
-        final subfolderCount = folder['subfolders_count'] ?? 0;
-        final imageCount = folder['images_count'] ?? 0;
-        final videoCount = folder['videos_count'] ?? 0;
-        final pdfCount = folder['pdfs_count'] ?? 0;
-
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 4,
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 12,
-              horizontal: 16,
-            ),
-
-            // removed trailing icons
-            leading: Icon(
-              Icons.folder,
-              size: 40,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-
-            title: Text(
-              folderName,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PhotoListScreen(
-                    isShared: true,
-                    sharedFolderId: folder['id'], // ✅ IMPORTANT
-                    sharedFolderName: folder['path'], // ✅ optional
-                    userId: widget.userId,
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-}
-
-class VideoThumbWidget extends StatelessWidget {
-  final String videoPath;
-
-  const VideoThumbWidget({super.key, required this.videoPath});
-
-  Future<Uint8List?> _getThumb() async {
-    return await vt.VideoThumbnail.thumbnailData(
-      video: videoPath,
-      imageFormat: vt.ImageFormat.JPEG,
-      maxWidth: 300,
-      quality: 65,
-    );
-  }
-
-  Future<String> _getDuration() async {
-    VideoPlayerController controller;
-
-    if (videoPath.startsWith('http')) {
-      controller = VideoPlayerController.network(videoPath);
-    } else {
-      controller = VideoPlayerController.file(File(videoPath));
-    }
-
-    await controller.initialize();
-    final duration = controller.value.duration;
-    controller.dispose();
-
-    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-
-    if (duration.inHours > 0) {
-      return "${duration.inHours.toString().padLeft(2, '0')}:$minutes:$seconds";
-    }
-
-    return "$minutes:$seconds";
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder(
-      future: Future.wait([_getThumb(), _getDuration()]),
-      builder: (context, AsyncSnapshot<List<dynamic>> snap) {
-        if (!snap.hasData) {
-          return Container(color: Colors.black26);
-        }
-
-        final Uint8List imageData = snap.data![0];
-        final String duration = snap.data![1];
-
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            // Thumbnail image
-            Image.memory(imageData, fit: BoxFit.cover),
-
-            // Play icon
-            const Center(
-              child: Icon(
-                Icons.play_circle_fill,
-                color: Colors.white,
-                size: 40,
-              ),
-            ),
-
-            // ⏱ Duration Badge
-            Positioned(
-              bottom: 6,
-              right: 6,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.75),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  duration,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class VideoNetworkPlayerScreen extends StatefulWidget {
-  final String videoUrl;
-  const VideoNetworkPlayerScreen({super.key, required this.videoUrl});
-
-  @override
-  State<VideoNetworkPlayerScreen> createState() =>
-      _VideoNetworkPlayerScreenState();
-}
-
-class _VideoNetworkPlayerScreenState extends State<VideoNetworkPlayerScreen> {
-  late VideoPlayerController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.network(widget.videoUrl)
-      ..initialize().then((_) {
-        setState(() {});
-        _controller.play();
-      });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Video")),
-      body: Center(
-        child: _controller.value.isInitialized
-            ? AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: VideoPlayer(_controller),
-              )
-            : const CircularProgressIndicator(),
       ),
     );
   }

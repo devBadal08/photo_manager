@@ -9,6 +9,7 @@ import 'package:photomanager_practice/services/bottom_tabs.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
 import 'package:photomanager_practice/widgets/custom_drawer.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'photo_list_screen.dart';
 import 'package:photomanager_practice/services/folder_service.dart';
 
@@ -39,6 +40,7 @@ class _FolderScreenState extends State<FolderScreen>
   bool isStorageNearLimit = false;
   String storageMessage = '';
   double percentUsed = 0.0;
+  String appBarTitle = "Folders";
 
   // late final StreamSubscription _statusCheckSub;
   Directory? selectedFolder;
@@ -61,6 +63,7 @@ class _FolderScreenState extends State<FolderScreen>
     await _loadUserName();
     await _loadAvatar();
     await _countFoldersAndImages();
+    await _loadSelectedCompanyName();
   }
 
   @override
@@ -68,6 +71,26 @@ class _FolderScreenState extends State<FolderScreen>
     _tabController.dispose();
     //_statusCheckSub.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadSelectedCompanyName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final companiesJson = prefs.getString("companies");
+    final selectedId = prefs.getInt("selected_company_id");
+
+    if (companiesJson == null || selectedId == null) return;
+
+    final list = List<Map<String, dynamic>>.from(jsonDecode(companiesJson));
+
+    final selectedCompany = list.firstWhere(
+      (c) => c["id"] == selectedId,
+      orElse: () => {},
+    );
+
+    if (!mounted) return;
+    setState(() {
+      appBarTitle = selectedCompany["company_name"] ?? "Folders";
+    });
   }
 
   Future<void> _loadUserName() async {
@@ -100,7 +123,7 @@ class _FolderScreenState extends State<FolderScreen>
 
   Future<void> _checkCompanyStorageUsage() async {
     try {
-      final url = Uri.parse('http://192.168.1.4:8000/api/storage-usage');
+      final url = Uri.parse('http://192.168.1.10:8000/api/storage-usage');
       final token = await folderService.getAuthToken();
 
       if (token == null || token.isEmpty) return;
@@ -537,20 +560,12 @@ class _FolderScreenState extends State<FolderScreen>
                 autofocus: true,
                 decoration: InputDecoration(
                   hintText: 'Search folders...',
-                  hintStyle: TextStyle(
-                    color: Theme.of(context).hintColor, // ✅ adapts to theme
-                  ),
                   border: InputBorder.none,
-                ),
-                style: TextStyle(
-                  color: Theme.of(
-                    context,
-                  ).textTheme.bodyLarge?.color, // ✅ adapts to theme
-                  fontSize: 18,
                 ),
                 onChanged: _filterFolders,
               )
-            : const Text("Folders"),
+            : Text(appBarTitle),
+
         leading: IconButton(
           icon: const Icon(Icons.menu),
           onPressed: () => _showCustomDrawer(context),

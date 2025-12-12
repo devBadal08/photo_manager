@@ -18,7 +18,7 @@ class ImageEditorScreen extends StatefulWidget {
 
 class _ImageEditorScreenState extends State<ImageEditorScreen>
     with TickerProviderStateMixin {
-  late List<File> images;
+  late List<dynamic> images;
   late PageController _pageController;
   List<File?> previewFiles = [];
   int currentIndex = 0;
@@ -26,7 +26,12 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
   @override
   void initState() {
     super.initState();
-    images = List<File>.from(widget.images);
+    images = widget.images.map((item) {
+      if (item is File) return item;
+      if (item is String && item.startsWith('http')) return item; // keep URL
+      return File(item);
+    }).toList();
+
     previewFiles = List<File?>.filled(images.length, null);
     _pageController = PageController(initialPage: widget.initialIndex);
     currentIndex = widget.initialIndex;
@@ -163,12 +168,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
                   panEnabled: true,
                   minScale: 1.0,
                   maxScale: 4.0,
-                  child: Image.file(
-                    displayedImage,
-                    fit: BoxFit.contain,
-                    width: double.infinity,
-                    height: double.infinity,
-                  ),
+                  child: _buildImage(displayedImage),
                 ),
               );
             },
@@ -215,5 +215,17 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
         ],
       ),
     );
+  }
+
+  Widget _buildImage(dynamic img) {
+    if (img is File) {
+      return Image.file(img, fit: BoxFit.contain);
+    } else if (img is String && img.startsWith('http')) {
+      return Image.network(img, fit: BoxFit.contain);
+    } else if (img is String) {
+      return Image.file(File(img), fit: BoxFit.contain);
+    } else {
+      return const Text("Invalid image");
+    }
   }
 }
