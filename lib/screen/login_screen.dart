@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:photomanager_practice/screen/folder_screen.dart';
 import 'package:http/http.dart' as http;
+import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -79,6 +80,8 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setString('user_name', userName ?? '');
         await prefs.setString('email', userEmail ?? '');
         await prefs.setString('password', password);
+        await AutoUploadService.instance.init();
+        await AutoUploadService.instance.setAutoUpload(false);
 
         Navigator.push(
           context,

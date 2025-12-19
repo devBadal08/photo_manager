@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:photomanager_practice/screen/folder_screen.dart';
 import 'package:photomanager_practice/screen/shared_with_me_screen.dart';
 import 'package:photomanager_practice/services/auto_upload_service.dart';
@@ -43,6 +46,8 @@ class _CustomDrawerState extends State<CustomDrawer> {
   String? _userEmail;
   List<dynamic> _companies = [];
   int? _selectedCompanyId;
+  String? _profilePhotoUrl;
+  bool _hasSelfie = false;
 
   @override
   void initState() {
@@ -53,6 +58,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
     _loadAvatarSeed();
     _loadUserEmail();
     _loadCompanies();
+    _loadProfilePhoto();
   }
 
   Future<void> _loadUserEmail() async {
@@ -70,6 +76,18 @@ class _CustomDrawerState extends State<CustomDrawer> {
         _selectedCompanyId = prefs.getInt("selected_company_id");
       });
     }
+  }
+
+  Future<void> _loadProfilePhoto() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString("user_id");
+
+    if (userId == null) return;
+
+    setState(() {
+      _profilePhotoUrl = prefs.getString("profile_photo_$userId");
+      _hasSelfie = prefs.getBool("has_selfie_$userId") ?? false;
+    });
   }
 
   Future<void> _loadAvatarSeed() async {
@@ -105,10 +123,11 @@ class _CustomDrawerState extends State<CustomDrawer> {
             onTap: _openAvatarPicker,
             child: CircleAvatar(
               radius: 26,
-              backgroundImage: widget.avatarImage != null
-                  ? FileImage(widget.avatarImage!)
+              backgroundColor: Colors.grey.shade200,
+              backgroundImage: (_hasSelfie && _profilePhotoUrl != null)
+                  ? NetworkImage(_profilePhotoUrl!)
                   : null,
-              child: widget.avatarImage == null
+              child: (!_hasSelfie)
                   ? DiceBearAvatar(
                       seed: _avatarSeed ?? widget.userName,
                       size: 52,
@@ -192,6 +211,128 @@ class _CustomDrawerState extends State<CustomDrawer> {
   }
 
   void _openAvatarPicker() async {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text("Take Selfie"),
+              onTap: () async {
+                Navigator.pop(context);
+                await _takeAndUploadSelfie();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.face),
+              title: const Text("Choose Avatar"),
+              onTap: () {
+                Navigator.pop(context);
+                _openDiceBearPicker();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<XFile> _compressImage(XFile file) async {
+    final dir = await getTemporaryDirectory();
+    final targetPath =
+        '${dir.path}/selfie_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+    final XFile? compressed = await FlutterImageCompress.compressAndGetFile(
+      file.path,
+      targetPath,
+      quality: 70,
+      minWidth: 600,
+      minHeight: 600,
+      format: CompressFormat.jpeg,
+    );
+
+    return compressed ?? file;
+  }
+
+  Future<void> _takeAndUploadSelfie() async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 100, // keep original, we compress manually
+      preferredCameraDevice: CameraDevice.front,
+    );
+
+    if (image == null) return;
+
+    final XFile compressedImage = await _compressImage(image);
+
+    debugPrint(
+      "Compressed size: ${File(compressedImage.path).lengthSync() / 1024} KB",
+    );
+
+    //debugPrint("Original size: ${originalFile.lengthSync() / 1024} KB");
+    //debugPrint("Compressed size: ${compressedFile.lengthSync() / 1024} KB");
+
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString("auth_token");
+    final userId = prefs.getString("user_id");
+
+    final uri = Uri.parse("http://192.168.1.10:8000/api/upload-selfie");
+
+    final request = http.MultipartRequest("POST", uri);
+    request.headers["Authorization"] = "Bearer $token";
+    request.headers["Accept"] = "application/json";
+
+    request.files.add(
+      await http.MultipartFile.fromPath("selfie", compressedImage.path),
+    );
+
+    final response = await request.send();
+
+    if (response.statusCode == 200) {
+      final resBody = jsonDecode(await response.stream.bytesToString());
+      final photoUrl = resBody["photo"];
+
+      if (userId == null) return;
+
+      await prefs.setString("profile_photo_$userId", photoUrl);
+      await prefs.setBool("has_selfie_$userId", true);
+
+      setState(() {
+        _profilePhotoUrl = photoUrl;
+        _hasSelfie = true;
+      });
+    } else {
+      final body = await response.stream.bytesToString();
+      debugPrint("❌ Upload failed: ${response.statusCode}");
+      debugPrint(body);
+    }
+  }
+
+  Future<void> _removeSelfieFromServer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString("auth_token");
+
+    if (token == null) return;
+
+    final uri = Uri.parse("http://192.168.1.10:8000/api/remove-profile-photo");
+
+    final response = await http.post(
+      uri,
+      headers: {"Authorization": "Bearer $token", "Accept": "application/json"},
+    );
+
+    if (response.statusCode != 200) {
+      debugPrint("❌ Failed to remove selfie from server");
+    }
+  }
+
+  void _openDiceBearPicker() async {
     List<String> seeds = List.generate(40, (i) => "avatar_$i");
 
     await showDialog(
@@ -211,7 +352,21 @@ class _CustomDrawerState extends State<CustomDrawer> {
             itemBuilder: (context, index) {
               return GestureDetector(
                 onTap: () async {
+                  final prefs = await SharedPreferences.getInstance();
+                  final userId = prefs.getString("user_id");
                   await _saveAvatarSeed(seeds[index]);
+
+                  if (userId == null) return;
+
+                  await _removeSelfieFromServer();
+
+                  await prefs.setBool("has_selfie_$userId", false);
+                  await prefs.remove("profile_photo_$userId");
+
+                  setState(() {
+                    _profilePhotoUrl = null; // fallback to avatar
+                    _hasSelfie = false;
+                  });
                   Navigator.pop(context);
                 },
                 child: DiceBearAvatar(seed: seeds[index], size: 60),
@@ -446,10 +601,35 @@ class _CustomDrawerState extends State<CustomDrawer> {
                       },
                     ),
 
-                    drawerItem(
-                      icon: Icons.cloud_upload,
-                      text: "Auto Upload",
-                      onTap: () {},
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: SwitchListTile(
+                        secondary: const Icon(
+                          Icons.cloud_upload,
+                          color: Colors.deepPurple,
+                        ),
+                        title: const Text("Auto Upload"),
+                        value: _autoUploadEnabled,
+                        onChanged: (value) async {
+                          setState(() {
+                            _autoUploadEnabled = value;
+                          });
+
+                          await _saveSettings();
+
+                          if (value) {
+                            _startAutoUploadListener();
+                            await AutoUploadService.instance.setAutoUpload(
+                              true,
+                            );
+                          } else {
+                            _stopAutoUploadListener();
+                            await AutoUploadService.instance.setAutoUpload(
+                              false,
+                            );
+                          }
+                        },
+                      ),
                     ),
 
                     drawerItem(

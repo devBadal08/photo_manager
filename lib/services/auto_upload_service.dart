@@ -45,10 +45,11 @@ class AutoUploadService {
   Future<Directory?> _getRootFolder() async {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('user_id')?.toString();
+    final companyId = prefs.getInt('selected_company_id');
     if (userId == null) return null;
 
     if (Platform.isAndroid) {
-      return Directory('/storage/emulated/0/Pictures/MyApp/$userId');
+      return Directory('/storage/emulated/0/Pictures/MyApp/$companyId/$userId');
     } else {
       // iOS: use application documents directory
       final docDir = await getApplicationDocumentsDirectory();
@@ -74,6 +75,7 @@ class AutoUploadService {
 
   /// Public method you can call from anywhere (screens, after capture, etc.)
   Future<void> uploadNow() async {
+    print("🟡 uploadNow() called, enabled=$_autoUploadEnabled");
     if (!_autoUploadEnabled) return;
     await _uploadPendingImages(); // private
   }
@@ -82,13 +84,27 @@ class AutoUploadService {
   Future<void> _uploadPendingImages() async {
     if (_isUploading) return; // debounce
     _isUploading = true;
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('user_id')?.toString();
-      if (userId == null) return;
+      if (userId == null) {
+        debugPrint("❌ No userId found");
+        return;
+      }
 
       final root = await _getRootFolder();
-      if (root == null || !await root.exists()) return;
+      if (root == null) {
+        debugPrint("❌ Root folder is null");
+        return;
+      }
+
+      if (!await root.exists()) {
+        debugPrint("❌ Root folder does NOT exist: ${root.path}");
+        return;
+      }
+
+      debugPrint("📂 AutoUpload root: ${root.path}");
 
       final files = root
           .listSync(recursive: true)
@@ -103,17 +119,30 @@ class AutoUploadService {
           )
           .toList();
 
-      for (final file in files) {
-        if (!PhotoService.uploadedFiles.value.contains(file.path)) {
-          await PhotoService.uploadImagesToServer(file, silent: true);
-          PhotoService.uploadedFiles.value = {
-            ...PhotoService.uploadedFiles.value,
-            file.path,
-          };
-        }
+      debugPrint("📸 Files found: ${files.length}");
+
+      for (final f in files) {
+        debugPrint("➡️ Found file: ${f.path}");
       }
 
-      debugPrint("✅ Auto-upload completed");
+      for (final file in files) {
+        if (PhotoService.uploadedFiles.value.contains(file.path)) {
+          debugPrint("⏭️ Skipped (already uploaded): ${file.path}");
+          continue;
+        }
+
+        debugPrint("⬆️ Uploading: ${file.path}");
+        await PhotoService.uploadImagesToServer(file, silent: true);
+
+        PhotoService.uploadedFiles.value = {
+          ...PhotoService.uploadedFiles.value,
+          file.path,
+        };
+
+        debugPrint("✅ Uploaded: ${file.path}");
+      }
+
+      debugPrint("🎉 Auto-upload cycle finished");
     } catch (e) {
       debugPrint("❌ Auto-upload failed: $e");
     } finally {

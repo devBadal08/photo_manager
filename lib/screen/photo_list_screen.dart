@@ -96,6 +96,23 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       _loadItems();
       countSubfoldersAndImages(widget.folder!.path);
     }
+
+    _triggerAutoUploadIfEnabled();
+  }
+
+  Future<void> _triggerAutoUploadIfEnabled() async {
+    if (!AutoUploadService.instance.isEnabled) return;
+
+    // Small delay so UI is ready
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    if (!mounted) return;
+
+    await AutoUploadService.instance.uploadNow();
+
+    if (!widget.isShared) {
+      _loadItems();
+    }
   }
 
   List<dynamic> images = [];

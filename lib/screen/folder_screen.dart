@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'photo_list_screen.dart';
 import 'package:photomanager_practice/services/folder_service.dart';
+import 'package:path/path.dart' as p;
 
 class FolderScreen extends StatefulWidget {
   final String userId;
@@ -187,7 +188,7 @@ class _FolderScreenState extends State<FolderScreen>
     setState(() {
       searchQuery = query;
       filteredFolders = folders.where((folder) {
-        final folderName = folder.path.split('/').last.toLowerCase();
+        final folderName = p.basename(folder.path).toLowerCase();
         return folderName.contains(lowerQuery);
       }).toList();
     });
@@ -308,83 +309,71 @@ class _FolderScreenState extends State<FolderScreen>
     folderService.showScanDisabledMessage(context);
   }
 
+  Future<void> _safeRenameFolder(Directory oldDir, String newName) async {
+    final parentPath = oldDir.parent.path;
+    final newDir = Directory(p.join(parentPath, newName));
+
+    if (await newDir.exists()) {
+      throw Exception('Folder already exists');
+    }
+
+    await newDir.create(recursive: true);
+
+    for (final entity in oldDir.listSync(recursive: true)) {
+      if (entity is File) {
+        final newPath = entity.path.replaceFirst(oldDir.path, newDir.path);
+        await entity.copy(newPath);
+      }
+    }
+
+    await oldDir.delete(recursive: true);
+  }
+
   Future<void> _renameFolder(Directory folder) async {
+    final parentContext = context; // ✅ save stable context
+
     final TextEditingController controller = TextEditingController(
       text: folder.path.split('/').last,
     );
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Rename Folder'),
-
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Do not use: /  \\  :  *  ?  "  <  >  |',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(hintText: 'New folder name'),
-            ),
-          ],
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: 'New folder name'),
         ),
-
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
-
           ElevatedButton(
             onPressed: () async {
               final newName = controller.text.trim();
-              Navigator.pop(context);
 
-              if (newName.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Folder name cannot be empty')),
-                );
-                return;
-              }
+              Navigator.pop(dialogContext); // ✅ close dialog safely
 
-              if (newName.length > 50) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Folder name must be 50 characters or less'),
-                  ),
-                );
-                return;
-              }
+              if (newName.isEmpty) return;
 
-              // ✅ BLOCK invalid characters
-              final invalidChars = RegExp(r'[\\/:*?"<>|]');
-              if (invalidChars.hasMatch(newName)) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Folder name cannot contain: /  \\  :  *  ?  "  <  >  |',
-                    ),
-                  ),
-                );
-                return;
-              }
+              try {
+                await _safeRenameFolder(folder, newName);
 
-              final newPath = '${folder.parent.path}/$newName';
-              final newDir = Directory(newPath);
+                if (!mounted) return;
 
-              if (!await newDir.exists()) {
-                await folder.rename(newPath);
-                _loadFolders(); // Refresh UI
+                _loadFolders();
                 _countFoldersAndImages();
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Folder already exists')),
+
+                ScaffoldMessenger.of(parentContext).showSnackBar(
+                  const SnackBar(content: Text('Folder renamed successfully')),
                 );
+              } catch (e) {
+                if (!mounted) return;
+
+                ScaffoldMessenger.of(
+                  parentContext,
+                ).showSnackBar(SnackBar(content: Text('Rename failed: $e')));
               }
             },
             child: const Text('Rename'),
@@ -440,7 +429,7 @@ class _FolderScreenState extends State<FolderScreen>
 
                         // Get folder ID from server
                         final folderId = await FolderShareService.getFolderId(
-                          folderName: folder.path.split('/').last,
+                          folderName: p.basename(folder.path),
                           parentId: null, // main folder has no parent
                         );
 
@@ -503,7 +492,7 @@ class _FolderScreenState extends State<FolderScreen>
               if (files.isNotEmpty) {
                 await Share.shareXFiles(
                   files,
-                  text: "📂 Sharing folder: ${folder.path.split('/').last}",
+                  text: "📂 Sharing folder: ${p.basename(folder.path)}",
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -694,7 +683,7 @@ class _FolderScreenState extends State<FolderScreen>
       itemCount: filteredFolders.length,
       itemBuilder: (context, index) {
         final folder = filteredFolders[index];
-        final folderName = folder.path.split('/').last;
+        final folderName = p.basename(folder.path);
 
         return Card(
           margin: const EdgeInsets.symmetric(vertical: 8),
