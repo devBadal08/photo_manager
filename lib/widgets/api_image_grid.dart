@@ -54,7 +54,7 @@ class ApiImageGrid extends StatelessWidget {
         final isPdf = extension == 'pdf';
         final isVideo = PhotoService.isVideoFileType(localPath);
         final isLocal = photo['local'] == true;
-        final serverUrl = "http://192.168.1.10:8000/storage/${photo['path']}";
+        final serverUrl = "http://192.168.1.7:8000/storage/${photo['path']}";
         final existsLocally = File(localPath).existsSync();
         final isSelected = selectedImages.contains(localPath);
         final isUploaded = uploadedSet.any((p) => p.endsWith(filename));
@@ -90,7 +90,7 @@ class ApiImageGrid extends StatelessWidget {
               final imgs = finalList.map((p) {
                 return p['local'] == true
                     ? p['path']
-                    : "http://192.168.1.10:8000/storage/${p['path']}";
+                    : "http://192.168.1.7:8000/storage/${p['path']}";
               }).toList();
 
               Navigator.push(

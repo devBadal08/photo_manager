@@ -9,6 +9,7 @@ import 'package:photomanager_practice/screen/pdf_viewer_screen.dart';
 import 'package:photomanager_practice/screen/scan_screen.dart';
 import 'package:photomanager_practice/services/auto_upload_service.dart';
 import 'package:photomanager_practice/services/bottom_tabs.dart';
+import 'package:photomanager_practice/services/folder_service.dart';
 import 'package:photomanager_practice/services/folder_share_service.dart';
 import 'package:photomanager_practice/services/folder_stat_service.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
@@ -424,6 +425,30 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               final newDir = Directory(newPath);
 
               if (!await newDir.exists()) {
+                final folderId = await PhotoService.getFolderIdFromDisk(folder);
+
+                print('🧪 PHOTO LIST RENAME DEBUG');
+                print('➡️ Folder path = ${folder.path}');
+                print('➡️ Folder name = ${folder.path.split('/').last}');
+                print('➡️ Returned folderId = $folderId');
+
+                if (folderId != null) {
+                  final success = await FolderService().renameFolderOnServer(
+                    folderId: folderId,
+                    newName: newName,
+                  );
+
+                  if (!success) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Server rename failed')),
+                    );
+                    return;
+                  }
+
+                  await FolderService.updateFolderMetaName(folderId, newName);
+                }
+
+                // rename locally only AFTER server success
                 await folder.rename(newPath);
                 _loadItems();
               } else {

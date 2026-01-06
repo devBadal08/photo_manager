@@ -48,7 +48,7 @@ class PDFGridCards extends StatelessWidget {
                 !(pdfPath.toString().startsWith('/storage')));
 
         final String? pdfUrl = isShared
-            ? (pdf['url'] ?? "http://192.168.1.10:8000/storage/${pdf['path']}")
+            ? (pdf['url'] ?? "http://192.168.1.7:8000/storage/${pdf['path']}")
             : null;
 
         return Card(

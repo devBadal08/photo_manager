@@ -43,7 +43,7 @@ class PhotoService {
     required String folderName,
     required String token,
   }) async {
-    final url = Uri.parse('http://192.168.1.10:8000/api/photos/uploadAll');
+    final url = Uri.parse('http://192.168.1.7:8000/api/photos/uploadAll');
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -210,6 +210,91 @@ class PhotoService {
     }
   }
 
+  static Future<void> _saveFolderMetaForBatch(
+    List<MapEntry<File, String>> batch,
+    int folderId,
+  ) async {
+    final firstFile = batch.first.key;
+    final folderDir = firstFile.parent;
+    final folderName = folderDir.path.split('/').last;
+    final folderPath = folderDir.path;
+
+    final baseDir = await getExternalStorageDirectory();
+    if (baseDir == null) return;
+
+    final metaDir = Directory('${baseDir.path}/folder_meta');
+    if (!await metaDir.exists()) {
+      await metaDir.create(recursive: true);
+    }
+
+    final metaFile = File('${metaDir.path}/folder_$folderId.json');
+
+    // 🔁 Update meta if exists (important for rename)
+    await metaFile.writeAsString(
+      jsonEncode({
+        'folder_id': folderId,
+        'folder_name': folderName,
+        'folder_path': folderPath, // ✅ THIS FIXES EVERYTHING
+      }),
+    );
+
+    debugPrint('✅ Folder meta saved/updated');
+    debugPrint('   id   = $folderId');
+    debugPrint('   name = $folderName');
+    debugPrint('   path = $folderPath');
+  }
+
+  static Future<int?> getFolderIdFromDisk(Directory folder) async {
+    final baseDir = await getExternalStorageDirectory();
+
+    print('🧪 GET FOLDER ID FROM DISK photolist');
+    print('➡️ Incoming folder path: ${folder.path}');
+    print('➡️ Incoming folder name: ${folder.path.split('/').last}');
+
+    if (baseDir == null) {
+      print('❌ baseDir is NULL');
+      return null;
+    }
+
+    print('➡️ baseDir path: ${baseDir.path}');
+
+    final metaDir = Directory('${baseDir.path}/folder_meta');
+
+    if (!await metaDir.exists()) {
+      print('❌ metaDir does NOT exist at: ${metaDir.path}');
+      return null;
+    }
+
+    print('➡️ metaDir found: ${metaDir.path}');
+
+    for (final file in metaDir.listSync()) {
+      print('📄 Reading meta file: ${file.path}');
+
+      try {
+        final data = jsonDecode(await File(file.path).readAsString());
+
+        final savedName = data['folder_name'];
+        final savedId = data['folder_id'];
+        final currentName = folder.path.split('/').last;
+
+        print('🔍 Comparing');
+        print('   savedName = $savedName');
+        print('   currentName = $currentName');
+        print('   savedId = $savedId');
+
+        if (data['folder_path'] == folder.path) {
+          print('✅ MATCH FOUND → folder_id = $savedId');
+          return savedId;
+        }
+      } catch (e) {
+        print('❌ Failed to read meta file ${file.path}: $e');
+      }
+    }
+
+    print('⚠️ NO MATCH FOUND → returning null');
+    return null;
+  }
+
   static Future<void> uploadImagesToServer(
     File? file, {
     BuildContext? context,
@@ -273,8 +358,9 @@ class PhotoService {
     final notUploadedPairs =
         List.generate(files.length, (i) => MapEntry(files[i], folderNames[i]))
             .where(
-              (entry) =>
-                  !PhotoService.uploadedFiles.value.contains(entry.key.path),
+              (entry) => !PhotoService.uploadedFiles.value.contains(
+                entry.key.absolute.path,
+              ),
             )
             .toList();
 
@@ -358,7 +444,7 @@ class PhotoService {
       final selectedCompanyId = prefs.getInt("selected_company_id");
 
       final checkUrl = Uri.parse(
-        'http://192.168.1.10:8000/api/storage-usage?company_id=$selectedCompanyId',
+        'http://192.168.1.7:8000/api/storage-usage?company_id=$selectedCompanyId',
       );
 
       final checkResponse = await http.get(
@@ -443,7 +529,7 @@ class PhotoService {
 
         final request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://192.168.1.10:8000/api/photos/uploadAll'),
+          Uri.parse('http://192.168.1.7:8000/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 
@@ -452,9 +538,19 @@ class PhotoService {
 
         for (int i = 0; i < batch.length; i++) {
           final file = batch[i].key;
-          final folder = batch[i].value;
+          final folderPath = batch[i].value;
 
-          request.fields['folders[$i]'] = folder;
+          final folderDir = Directory(path.join(baseDir.path, folderPath));
+
+          final folderId = await PhotoService.getFolderIdFromDisk(folderDir);
+
+          if (folderId != null) {
+            request.fields['folders[$i][folder_id]'] = folderId.toString();
+          } else {
+            // fallback for old folders (first upload)
+            request.fields['folders[$i]'] = folderPath;
+          }
+
           request.files.add(
             await http.MultipartFile.fromPath('$type[$i]', file.path),
           );
@@ -464,10 +560,18 @@ class PhotoService {
         final resStr = await response.stream.bytesToString();
 
         if (response.statusCode == 200) {
-          // ✅ Upload success
+          final data = jsonDecode(resStr);
+
+          final List folderIds = data['folder_ids'] ?? [];
+
+          if (folderIds.isNotEmpty && response.statusCode == 200) {
+            await _saveFolderMetaForBatch(batch, folderIds.first);
+          }
+
           for (final entry in batch) {
             PhotoService.uploadedFiles.value.add(entry.key.absolute.path);
           }
+
           PhotoService.uploadedFiles.notifyListeners();
           await PhotoService.saveUploadedFiles();
           uploadedCount.value += batch.length;

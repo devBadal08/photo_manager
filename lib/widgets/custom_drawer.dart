@@ -282,7 +282,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
     final token = prefs.getString("auth_token");
     final userId = prefs.getString("user_id");
 
-    final uri = Uri.parse("http://192.168.1.10:8000/api/upload-selfie");
+    final uri = Uri.parse("http://192.168.1.7:8000/api/upload-selfie");
 
     final request = http.MultipartRequest("POST", uri);
     request.headers["Authorization"] = "Bearer $token";
@@ -320,7 +320,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
 
     if (token == null) return;
 
-    final uri = Uri.parse("http://192.168.1.10:8000/api/remove-profile-photo");
+    final uri = Uri.parse("http://192.168.1.7:8000/api/remove-profile-photo");
 
     final response = await http.post(
       uri,

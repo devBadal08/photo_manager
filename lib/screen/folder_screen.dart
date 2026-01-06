@@ -12,7 +12,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'photo_list_screen.dart';
 import 'package:photomanager_practice/services/folder_service.dart';
-import 'package:path/path.dart' as p;
 
 class FolderScreen extends StatefulWidget {
   final String userId;
@@ -124,9 +123,19 @@ class _FolderScreenState extends State<FolderScreen>
 
   Future<void> _checkCompanyStorageUsage() async {
     try {
-      final url = Uri.parse('http://192.168.1.10:8000/api/storage-usage');
-      final token = await folderService.getAuthToken();
+      final prefs = await SharedPreferences.getInstance();
+      final companyId = prefs.getInt("selected_company_id");
 
+      if (companyId == null) {
+        debugPrint("❌ No selected_company_id found");
+        return;
+      }
+
+      final url = Uri.parse(
+        'http://192.168.1.7:8000/api/storage-usage?company_id=$companyId',
+      );
+
+      final token = await folderService.getAuthToken();
       if (token == null || token.isEmpty) return;
 
       final response = await http.get(
@@ -140,26 +149,29 @@ class _FolderScreenState extends State<FolderScreen>
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
 
-        var percentUsed = (data['percent_used'] ?? 0).toDouble();
+        final usedPercent = (data['percent_used'] ?? 0).toDouble();
         final usedMB = (data['used_storage_mb'] ?? 0).toDouble();
         final maxMB = (data['max_storage_mb'] ?? 0).toDouble();
 
         if (!mounted) return;
+
         setState(() {
-          percentUsed = (data['percent_used'] ?? 0).toDouble();
-          isStorageNearLimit = percentUsed >= 85; // Show banner from 85% onward
-          storageMessage = percentUsed >= 99.5
-              ? "Storage full! Please contact admin or delete files."
+          percentUsed = usedPercent;
+          isStorageNearLimit = percentUsed >= 85;
+          storageMessage = percentUsed >= 98.5
+              ? "Storage full! Please contact admin."
               : percentUsed >= 85
               ? "Warning: You are close to your storage limit!"
               : "";
         });
 
         debugPrint(
-          "Used: $usedMB MB / $maxMB MB  (${percentUsed.toStringAsFixed(2)}%)",
+          "Used: $usedMB MB / $maxMB MB (${percentUsed.toStringAsFixed(2)}%)",
         );
       } else {
-        debugPrint("Storage check failed: ${response.statusCode}");
+        debugPrint(
+          "Storage check failed: ${response.statusCode} → ${response.body}",
+        );
       }
     } catch (e) {
       debugPrint("❌ Error checking storage: $e");
@@ -188,7 +200,7 @@ class _FolderScreenState extends State<FolderScreen>
     setState(() {
       searchQuery = query;
       filteredFolders = folders.where((folder) {
-        final folderName = p.basename(folder.path).toLowerCase();
+        final folderName = folder.path.split('/').last.toLowerCase();
         return folderName.contains(lowerQuery);
       }).toList();
     });
@@ -309,29 +321,7 @@ class _FolderScreenState extends State<FolderScreen>
     folderService.showScanDisabledMessage(context);
   }
 
-  Future<void> _safeRenameFolder(Directory oldDir, String newName) async {
-    final parentPath = oldDir.parent.path;
-    final newDir = Directory(p.join(parentPath, newName));
-
-    if (await newDir.exists()) {
-      throw Exception('Folder already exists');
-    }
-
-    await newDir.create(recursive: true);
-
-    for (final entity in oldDir.listSync(recursive: true)) {
-      if (entity is File) {
-        final newPath = entity.path.replaceFirst(oldDir.path, newDir.path);
-        await entity.copy(newPath);
-      }
-    }
-
-    await oldDir.delete(recursive: true);
-  }
-
   Future<void> _renameFolder(Directory folder) async {
-    final parentContext = context; // ✅ save stable context
-
     final TextEditingController controller = TextEditingController(
       text: folder.path.split('/').last,
     );
@@ -340,41 +330,104 @@ class _FolderScreenState extends State<FolderScreen>
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Rename Folder'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'New folder name'),
+
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Do not use: /  \\  :  *  ?  "  <  >  |',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(hintText: 'New folder name'),
+            ),
+          ],
         ),
+
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
+            onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
+
           ElevatedButton(
             onPressed: () async {
               final newName = controller.text.trim();
-
               Navigator.pop(dialogContext); // ✅ close dialog safely
 
-              if (newName.isEmpty) return;
+              if (!mounted) return;
 
-              try {
-                await _safeRenameFolder(folder, newName);
-
-                if (!mounted) return;
-
-                _loadFolders();
-                _countFoldersAndImages();
-
-                ScaffoldMessenger.of(parentContext).showSnackBar(
-                  const SnackBar(content: Text('Folder renamed successfully')),
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Folder name cannot be empty')),
                 );
-              } catch (e) {
-                if (!mounted) return;
-
-                ScaffoldMessenger.of(
-                  parentContext,
-                ).showSnackBar(SnackBar(content: Text('Rename failed: $e')));
+                return;
               }
+
+              final invalidChars = RegExp(r'[\\/:*?"<>|]');
+              if (invalidChars.hasMatch(newName)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Invalid characters in folder name'),
+                  ),
+                );
+                return;
+              }
+
+              final newPath = '${folder.parent.path}/$newName';
+              final newDir = Directory(newPath);
+
+              if (await newDir.exists()) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Folder already exists')),
+                );
+                return;
+              }
+
+              final folderId = await FolderService.getFolderIdFromDisk(folder);
+
+              print('🧪 FOLDER SCREEN RENAME DEBUG');
+              print('➡️ Folder path = ${folder.path}');
+              print('➡️ Folder name = ${folder.path.split('/').last}');
+              print('➡️ Returned folderId = $folderId');
+
+              if (folderId == null) {
+                // ✅ LOCAL-ONLY FOLDER
+                print('ℹ️ Local-only folder. Renaming locally.');
+
+                await folder.rename(newPath);
+                _loadFolders(); // or _loadItems()
+                _countFoldersAndImages();
+                return;
+              }
+
+              // server rename first
+              final success = await folderService.renameFolderOnServer(
+                folderId: folderId,
+                newName: newName,
+              );
+
+              if (!success) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Failed to rename folder on server'),
+                  ),
+                );
+                return;
+              }
+
+              // local rename
+              await folder.rename(newPath);
+
+              // ✅ update metadata name
+              await FolderService.updateFolderMetaName(folderId, newName);
+
+              _loadFolders();
+              _countFoldersAndImages();
             },
             child: const Text('Rename'),
           ),
@@ -429,7 +482,7 @@ class _FolderScreenState extends State<FolderScreen>
 
                         // Get folder ID from server
                         final folderId = await FolderShareService.getFolderId(
-                          folderName: p.basename(folder.path),
+                          folderName: folder.path.split('/').last,
                           parentId: null, // main folder has no parent
                         );
 
@@ -492,7 +545,7 @@ class _FolderScreenState extends State<FolderScreen>
               if (files.isNotEmpty) {
                 await Share.shareXFiles(
                   files,
-                  text: "📂 Sharing folder: ${p.basename(folder.path)}",
+                  text: "📂 Sharing folder: ${folder.path.split('/').last}",
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -583,39 +636,35 @@ class _FolderScreenState extends State<FolderScreen>
         children: [
           // 🔹 Always-visible storage banner
           if (isStorageNearLimit)
-            if (isStorageNearLimit)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                width: double.infinity,
-                color: percentUsed >= 99.5
-                    ? Colors.red.shade400
-                    : Theme.of(context).colorScheme.primary,
-                padding: const EdgeInsets.symmetric(
-                  vertical: 10,
-                  horizontal: 16,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      percentUsed >= 99.5
-                          ? Icons.error_outline
-                          : Icons.warning_amber_rounded,
-                      color: Colors.white,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        storageMessage,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              width: double.infinity,
+              color: percentUsed >= 99.5
+                  ? Colors.red.shade400
+                  : Theme.of(context).colorScheme.primary,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+              child: Row(
+                children: [
+                  Icon(
+                    percentUsed >= 99.5
+                        ? Icons.error_outline
+                        : Icons.warning_amber_rounded,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      storageMessage,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+            ),
 
           // Main content below banner
           Expanded(
@@ -683,7 +732,7 @@ class _FolderScreenState extends State<FolderScreen>
       itemCount: filteredFolders.length,
       itemBuilder: (context, index) {
         final folder = filteredFolders[index];
-        final folderName = p.basename(folder.path);
+        final folderName = folder.path.split('/').last;
 
         return Card(
           margin: const EdgeInsets.symmetric(vertical: 8),

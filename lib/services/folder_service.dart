@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,11 +31,14 @@ class FolderService {
     int folderCount = 0;
     int imageCount = 0;
     int videoCount = 0;
+    int pdfCount = 0;
 
-    final Directory appDir = await getApplicationDocumentsDirectory();
-    final List<FileSystemEntity> entities = appDir.listSync(recursive: true);
+    final baseDir = await _getBaseFolder();
+    if (baseDir == null || !await baseDir.exists()) {
+      return {'folders': 0, 'images': 0, 'videos': 0, 'pdfs': 0};
+    }
 
-    for (final entity in entities) {
+    for (final entity in baseDir.listSync(recursive: true)) {
       if (entity is Directory) {
         folderCount++;
       } else if (entity is File) {
@@ -44,11 +49,18 @@ class FolderService {
           imageCount++;
         } else if (path.endsWith('.mp4')) {
           videoCount++;
+        } else if (path.endsWith('.pdf')) {
+          pdfCount++;
         }
       }
     }
 
-    return {'folders': folderCount, 'images': imageCount, 'videos': videoCount};
+    return {
+      'folders': folderCount,
+      'images': imageCount,
+      'videos': videoCount,
+      'pdfs': pdfCount,
+    };
   }
 
   Future<Map<String, int>> countSubfoldersImagesVideos(Directory folder) async {
@@ -218,5 +230,102 @@ class FolderService {
       print("Delete error: $e");
       return false;
     }
+  }
+
+  static Future<int?> getFolderIdFromDisk(Directory folder) async {
+    final baseDir = await getExternalStorageDirectory();
+
+    print('🧪 GET FOLDER ID FROM DISK');
+    print('➡️ Incoming folder path: ${folder.path}');
+    print('➡️ Incoming folder name: ${folder.path.split('/').last}');
+
+    if (baseDir == null) {
+      print('❌ baseDir is NULL');
+      return null;
+    }
+
+    print('➡️ baseDir path: ${baseDir.path}');
+
+    final metaDir = Directory('${baseDir.path}/folder_meta');
+
+    if (!await metaDir.exists()) {
+      print('❌ metaDir does NOT exist at: ${metaDir.path}');
+      return null;
+    }
+
+    print('➡️ metaDir found: ${metaDir.path}');
+
+    for (final file in metaDir.listSync()) {
+      print('📄 Reading meta file: ${file.path}');
+
+      try {
+        final data = jsonDecode(await File(file.path).readAsString());
+
+        final savedName = data['folder_name'];
+        final savedId = data['folder_id'];
+        final currentName = folder.path.split('/').last;
+
+        print('🔍 Comparing');
+        print('   savedName = $savedName');
+        print('   currentName = $currentName');
+        print('   savedId = $savedId');
+
+        if (data['folder_path'] == folder.path) {
+          print('✅ MATCH FOUND → folder_id = $savedId');
+          return savedId;
+        }
+      } catch (e) {
+        print('❌ Failed to read meta file ${file.path}: $e');
+      }
+    }
+
+    print('⚠️ NO MATCH FOUND → returning null');
+    return null;
+  }
+
+  Future<bool> renameFolderOnServer({
+    required int folderId,
+    required String newName,
+  }) async {
+    final token = await getAuthToken();
+
+    final prefs = await SharedPreferences.getInstance();
+    final companyId = prefs.getInt('selected_company_id');
+
+    print('🧪 RENAME API DEBUG');
+    print('➡️ folderId = $folderId (${folderId.runtimeType})');
+    print('➡️ newName = $newName');
+    print('➡️ companyId = $companyId');
+    print('➡️ token exists = ${token != null}');
+    //print('➡️ URL = $baseUrl/folder/$folderId/rename');
+
+    final response = await http.put(
+      Uri.parse('http://192.168.1.7:8000/api/folders/$folderId/rename'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'name': newName, 'company_id': companyId}),
+    );
+
+    print('📝 Rename status: ${response.statusCode}');
+    print('📝 Rename response: ${response.body}');
+
+    return response.statusCode == 200;
+  }
+
+  static Future<void> updateFolderMetaName(int folderId, String newName) async {
+    final baseDir = await getExternalStorageDirectory();
+    if (baseDir == null) return;
+
+    final metaFile = File('${baseDir.path}/folder_meta/folder_$folderId.json');
+
+    if (!await metaFile.exists()) return;
+
+    final data = jsonDecode(await metaFile.readAsString());
+    data['folder_name'] = newName;
+
+    await metaFile.writeAsString(jsonEncode(data));
   }
 }
