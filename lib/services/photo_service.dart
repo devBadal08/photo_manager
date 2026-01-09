@@ -43,7 +43,7 @@ class PhotoService {
     required String folderName,
     required String token,
   }) async {
-    final url = Uri.parse('http://192.168.1.7:8000/api/photos/uploadAll');
+    final url = Uri.parse('https://techstrota.cloud/api/photos/uploadAll');
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -444,7 +444,7 @@ class PhotoService {
       final selectedCompanyId = prefs.getInt("selected_company_id");
 
       final checkUrl = Uri.parse(
-        'http://192.168.1.7:8000/api/storage-usage?company_id=$selectedCompanyId',
+        'https://techstrota.cloud/api/storage-usage?company_id=$selectedCompanyId',
       );
 
       final checkResponse = await http.get(
@@ -529,7 +529,7 @@ class PhotoService {
 
         final request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://192.168.1.7:8000/api/photos/uploadAll'),
+          Uri.parse('https://techstrota.cloud/api/photos/uploadAll'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 

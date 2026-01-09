@@ -11,6 +11,7 @@ class ImageGrid extends StatelessWidget {
   final List<String> selectedImages;
   final ValueNotifier<Set<String>> uploadedSet;
   final Function(String) onToggleSelect;
+  final Function(String) onEnterSelectionMode;
 
   const ImageGrid({
     super.key,
@@ -19,6 +20,7 @@ class ImageGrid extends StatelessWidget {
     required this.selectedImages,
     required this.uploadedSet,
     required this.onToggleSelect,
+    required this.onEnterSelectionMode,
   });
 
   @override
@@ -45,7 +47,11 @@ class ImageGrid extends StatelessWidget {
             final isVideo = PhotoService.isVideoFileType(filePath);
 
             return GestureDetector(
-              onLongPress: () => onToggleSelect(filePath),
+              onLongPress: () {
+                if (!selectionMode) {
+                  onEnterSelectionMode(filePath);
+                }
+              },
               onTap: () {
                 if (selectionMode) {
                   onToggleSelect(filePath);

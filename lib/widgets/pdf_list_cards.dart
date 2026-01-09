@@ -9,6 +9,7 @@ class PDFListCards extends StatelessWidget {
   final List<String> selectedImages;
   final void Function(String) onSelectToggle;
   final void Function(File) onRename;
+  final Function(String) onEnterSelectionMode;
 
   const PDFListCards({
     super.key,
@@ -17,6 +18,7 @@ class PDFListCards extends StatelessWidget {
     required this.selectedImages,
     required this.onSelectToggle,
     required this.onRename,
+    required this.onEnterSelectionMode,
   });
 
   @override
@@ -74,7 +76,12 @@ class PDFListCards extends StatelessWidget {
                     icon: const Icon(Icons.edit_note, color: Colors.blueAccent),
                     onPressed: () => onRename(pdfFile),
                   ),
-            onLongPress: () => onSelectToggle(pdfPath),
+            onLongPress: () {
+              if (!selectionMode) {
+                onEnterSelectionMode(pdfPath);
+              }
+            },
+
             onTap: () {
               if (selectionMode) {
                 onSelectToggle(pdfPath);

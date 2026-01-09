@@ -37,7 +37,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> login(String email, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('http://192.168.1.7:8000/api/login'),
+        Uri.parse('https://techstrota.cloud/api/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );
@@ -64,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
           if (rawLogo != null && rawLogo.isNotEmpty) {
             prefs.setString(
               "company_logo",
-              "http://192.168.1.7:8000/storage/$rawLogo",
+              "https://techstrota.cloud/storage/$rawLogo",
             );
           } else {
             prefs.remove("company_logo");

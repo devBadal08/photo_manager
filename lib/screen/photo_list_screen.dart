@@ -729,15 +729,68 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       return;
     }
 
+    final uploadedSet = PhotoService.uploadedFiles.value;
+
+    // ✅ only allow deletion of uploaded images
+    final uploadedImages = selectedImages
+        .where((path) => uploadedSet.contains(path))
+        .toList();
+
+    final notUploadedImages = selectedImages
+        .where((path) => !uploadedSet.contains(path))
+        .toList();
+
+    // ❌ nothing uploaded → block delete
+    if (uploadedImages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please upload images before deleting them."),
+        ),
+      );
+      return;
+    }
+
+    // confirmation message
     final confirm = await DialogHelpers.showConfirmDialog(
       context,
-      title: "Delete Uploaded Images",
-      message:
-          "Delete ${selectedImages.length} selected images?\n\n"
-          "Only uploaded images will be deleted.",
+      title: "Delete Images",
+      message: notUploadedImages.isEmpty
+          ? "Delete ${uploadedImages.length} uploaded images?"
+          : "Only ${uploadedImages.length} uploaded images will be deleted.\n"
+                "${notUploadedImages.length} images are not uploaded yet.",
     );
 
     if (!confirm) return;
+
+    // ✅ delete only uploaded images
+    for (final path in uploadedImages) {
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint("Delete failed for $path: $e");
+      }
+    }
+
+    setState(() {
+      selectedImages.clear();
+      selectionMode = false;
+    });
+
+    await _loadItems();
+
+    // info message if some were skipped
+    if (notUploadedImages.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "${notUploadedImages.length} images were not deleted because they are not uploaded yet.",
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _openScanScreen() async {
@@ -1124,6 +1177,18 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                                     } else {
                                       selectedImages.add(path);
                                     }
+
+                                    if (selectedImages.isEmpty) {
+                                      selectionMode = false; // ✅ auto-exit
+                                    }
+                                  });
+                                },
+                                onEnterSelectionMode: (path) {
+                                  setState(() {
+                                    selectionMode = true;
+                                    selectedImages = [
+                                      path,
+                                    ]; // ✅ first selected item
                                   });
                                 },
                               )),
@@ -1162,6 +1227,16 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                               } else {
                                 selectedImages.add(path);
                               }
+
+                              if (selectedImages.isEmpty) {
+                                selectionMode = false;
+                              }
+                            });
+                          },
+                          onEnterSelectionMode: (path) {
+                            setState(() {
+                              selectionMode = true;
+                              selectedImages = [path];
                             });
                           },
                           onRename: _renamePdf,
