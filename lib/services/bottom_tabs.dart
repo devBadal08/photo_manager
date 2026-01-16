@@ -220,7 +220,7 @@ class BottomTabs extends StatelessWidget {
 
   //       var request = http.MultipartRequest(
   //         'POST',
-  //         Uri.parse('https://techstrota.cloud/api/photos/uploadAll'),
+  //         Uri.parse('http://192.168.1.11:8000/api/photos/uploadAll'),
   //       );
   //       request.headers['Authorization'] = 'Bearer $token';
 

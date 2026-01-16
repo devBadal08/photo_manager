@@ -132,7 +132,7 @@ class _FolderScreenState extends State<FolderScreen>
       }
 
       final url = Uri.parse(
-        'https://techstrota.cloud/api/storage-usage?company_id=$companyId',
+        'http://192.168.1.11:8000/api/storage-usage?company_id=$companyId',
       );
 
       final token = await folderService.getAuthToken();

@@ -300,7 +300,7 @@ class FolderService {
     //print('➡️ URL = $baseUrl/folder/$folderId/rename');
 
     final response = await http.put(
-      Uri.parse('https://techstrota.cloud/api/folders/$folderId/rename'),
+      Uri.parse('http://192.168.1.11:8000/api/folders/$folderId/rename'),
       headers: {
         'Authorization': 'Bearer $token',
         'Accept': 'application/json',
