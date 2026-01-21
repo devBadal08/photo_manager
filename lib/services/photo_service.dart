@@ -213,6 +213,7 @@ class PhotoService {
   static Future<void> _saveFolderMetaForBatch(
     List<MapEntry<File, String>> batch,
     int folderId,
+    int? parentId,
   ) async {
     final firstFile = batch.first.key;
     final folderDir = firstFile.parent;
@@ -295,6 +296,71 @@ class PhotoService {
     return null;
   }
 
+  static Future<int?> ensureFolderOnServer({
+    required Directory folderDir,
+    required int companyId,
+    required String userId,
+    required String token,
+  }) async {
+    // 1️⃣ Try meta first
+    final existingId = await getFolderIdFromDisk(folderDir);
+    if (existingId != null) return existingId;
+
+    final baseStopPath =
+        '/storage/emulated/0/Pictures/MyApp/$companyId/$userId';
+
+    int? parentId;
+
+    // 2️⃣ Stop ONLY at company/user root
+    if (folderDir.path != baseStopPath) {
+      final parentDir = folderDir.parent;
+
+      if (parentDir.path != baseStopPath) {
+        parentId = await ensureFolderOnServer(
+          folderDir: parentDir,
+          companyId: companyId,
+          userId: userId,
+          token: token,
+        );
+      }
+    }
+
+    // 3️⃣ Create current folder
+    final folderName = folderDir.path.split('/').last;
+
+    // ✅ build body safely (NO null values)
+    final body = <String, String>{
+      'name': folderName,
+      'company_id': companyId.toString(),
+    };
+
+    if (parentId != null) {
+      body['parent_id'] = parentId.toString();
+    }
+
+    // ✅ single http.post call
+    final response = await http.post(
+      Uri.parse('http://192.168.1.11:8000/api/photos/create-folder'),
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      body: body,
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final folderId = data['folder']['id'];
+
+      await _saveFolderMetaForBatch(
+        [MapEntry(File('${folderDir.path}/_'), folderDir.path)],
+        folderId,
+        parentId,
+      );
+
+      return folderId;
+    }
+
+    return null;
+  }
+
   static Future<void> uploadImagesToServer(
     File? file, {
     BuildContext? context,
@@ -305,6 +371,15 @@ class PhotoService {
     final userId = prefs.getString('user_id');
     final token = prefs.getString('auth_token');
     final companyId = prefs.getInt('selected_company_id');
+
+    if (companyId == null) {
+      if (!silent && context != null && context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Company not selected")));
+      }
+      return;
+    }
 
     if (userId == null || token == null) {
       if (!silent && context != null && context.mounted) {
@@ -525,15 +600,12 @@ class PhotoService {
         List<MapEntry<File, String>> batch,
         String type,
       ) async {
-        if (batch.isEmpty) return true;
-
         final request = http.MultipartRequest(
           'POST',
           Uri.parse('http://192.168.1.11:8000/api/photos/uploadAll'),
         );
-        request.headers['Authorization'] = 'Bearer $token';
 
-        // Add company_id so Laravel can route correctly
+        request.headers['Authorization'] = 'Bearer $token';
         request.fields['company_id'] = companyId.toString();
 
         for (int i = 0; i < batch.length; i++) {
@@ -542,15 +614,18 @@ class PhotoService {
 
           final folderDir = Directory(path.join(baseDir.path, folderPath));
 
-          final folderId = await PhotoService.getFolderIdFromDisk(folderDir);
+          final folderId = await ensureFolderOnServer(
+            folderDir: folderDir,
+            companyId: companyId!,
+            userId: userId!,
+            token: token!,
+          );
 
-          if (folderId != null) {
-            request.fields['folders[$i][folder_id]'] = folderId.toString();
-          } else {
-            // fallback for old folders (first upload)
-            request.fields['folders[$i]'] = folderPath;
+          if (folderId == null) {
+            throw Exception('Failed to create folder: $folderPath');
           }
 
+          request.fields['folders[$i][folder_id]'] = folderId.toString();
           request.files.add(
             await http.MultipartFile.fromPath('$type[$i]', file.path),
           );
@@ -560,55 +635,16 @@ class PhotoService {
         final resStr = await response.stream.bytesToString();
 
         if (response.statusCode == 200) {
-          final data = jsonDecode(resStr);
-
-          final List folderIds = data['folder_ids'] ?? [];
-
-          if (folderIds.isNotEmpty && response.statusCode == 200) {
-            await _saveFolderMetaForBatch(batch, folderIds.first);
-          }
-
           for (final entry in batch) {
-            PhotoService.uploadedFiles.value.add(entry.key.absolute.path);
+            uploadedFiles.value.add(entry.key.absolute.path);
           }
-
-          PhotoService.uploadedFiles.notifyListeners();
-          await PhotoService.saveUploadedFiles();
+          await saveUploadedFiles();
           uploadedCount.value += batch.length;
           return true;
-        } else if (response.statusCode == 403) {
-          // 🚫 Laravel says storage full
-          final data = jsonDecode(resStr);
-          final errorMsg = data['error'] ?? 'Storage limit reached.';
-
-          debugPrint("🚫 Upload blocked: $errorMsg");
-
-          if (context != null && context.mounted) {
-            // ✅ Close progress dialog instantly
-            if (Navigator.canPop(context)) Navigator.pop(context);
-
-            // ✅ Show clean alert dialog instead of snackbar
-            await showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: const Text("Storage Limit Reached ⚠️"),
-                content: Text(errorMsg, style: const TextStyle(fontSize: 16)),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text("OK"),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          // ❌ Stop all further uploads
-          throw Exception('Storage full');
-        } else {
-          debugPrint("Batch upload failed ($type): $resStr");
-          return false;
         }
+
+        debugPrint("Upload failed: $resStr");
+        return false;
       }
 
       // Upload images in batches
