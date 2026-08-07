@@ -99,6 +99,22 @@ class PhotoService {
         .toList();
   }
 
+  static Future<bool> renameFileOnServer({
+    required String oldPath,
+    required String newName,
+    required String token,
+  }) async {
+    final response = await http.post(
+      Uri.parse('https://techstrota.cloud/api/photos/rename-file'),
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      body: {'old_path': oldPath, 'new_name': newName},
+    );
+
+    print("🔄 Rename response: ${response.body}");
+
+    return response.statusCode == 200;
+  }
+
   Future<List<File>> loadPhotosInFolder(String folderName) async {
     final baseDir = await PhotoService.getUserRootDir();
     if (baseDir == null) return [];
@@ -529,7 +545,7 @@ class PhotoService {
         builder: (context) => AlertDialog(
           title: const Text("Upload Confirmation"),
           content: Text(
-            "Do you want to upload ${notUploadedPairs.length} media files to the server?",
+            "Do you want to upload total ${notUploadedPairs.length} media files to the server?",
           ),
           actions: [
             TextButton(
@@ -704,6 +720,8 @@ class PhotoService {
           return true;
         }
 
+        print("Status Code: ${response.statusCode}");
+        print("Response: $resStr");
         debugPrint("Upload failed: $resStr");
         return false;
       }

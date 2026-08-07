@@ -20,6 +20,7 @@ import 'package:photomanager_practice/widgets/pdf_list_cards.dart';
 import 'package:photomanager_practice/widgets/shared_folder_list.dart';
 import 'package:photomanager_practice/widgets/video_thumb_widget.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 import 'package:photomanager_practice/widgets/image_grid.dart';
@@ -27,6 +28,7 @@ import 'package:photomanager_practice/widgets/api_image_grid.dart';
 import 'package:photomanager_practice/widgets/folder_list_cards.dart';
 import 'package:photomanager_practice/screen/video_player_screen.dart';
 import 'package:photomanager_practice/screen/video_network_player_screen.dart';
+import 'package:file_picker/file_picker.dart';
 
 class PhotoListScreen extends StatefulWidget {
   final Directory? folder;
@@ -73,6 +75,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
   List<Directory> filteredFolders = [];
   List<Map<String, dynamic>> _sharedPendingFiles = [];
   List<Map<String, dynamic>> apiFolders = [];
+  bool _isImporting = false;
+  int _importedCount = 0;
+  int _totalImportCount = 0;
+  final ValueNotifier<int> _importProgress = ValueNotifier(0);
 
   String get _mainFolderName => widget.isShared
       ? (widget.sharedFolderName?.split('/').last ?? "Shared Folder")
@@ -97,6 +103,73 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     }
 
     _triggerAutoUploadIfEnabled();
+  }
+
+  Future<void> _pickImagesFromGallery() async {
+    if (widget.folder == null) return;
+
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      type: FileType.image,
+    );
+
+    if (result == null) return;
+
+    _totalImportCount = result.files.length;
+    _importedCount = 0;
+    _isImporting = true;
+
+    _showImportDialog();
+    try {
+      const int batchSize = 5;
+
+      for (int i = 0; i < result.files.length; i += batchSize) {
+        final batch = result.files.skip(i).take(batchSize).toList();
+
+        final copiedFiles = <File>[];
+
+        await Future.wait(
+          batch.map((file) async {
+            if (file.path == null) {
+              return;
+            }
+
+            final sourceFile = File(file.path!);
+
+            final targetPath = '${widget.folder!.path}/${file.name}';
+
+            await sourceFile.openRead().pipe(File(targetPath).openWrite());
+
+            copiedFiles.add(File(targetPath));
+
+            _importedCount++;
+            _importProgress.value = _importedCount;
+          }),
+        );
+
+        if (mounted) {
+          imageItems.addAll(copiedFiles);
+          setState(() {});
+        }
+      }
+    } finally {
+      //ImportService.instance.finishImport();
+    }
+
+    if (mounted && Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+
+    _isImporting = false;
+    _importedCount = 0;
+    _importProgress.value = 0;
+    _totalImportCount = 0;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${result.files.length} images imported successfully'),
+      ),
+    );
   }
 
   Future<void> _triggerAutoUploadIfEnabled() async {
@@ -137,6 +210,40 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     if (!exists) {
       _sharedPendingFiles.add({"path": path, "local": true});
     }
+  }
+
+  void _showImportDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text("Importing Photos"),
+          content: ValueListenableBuilder<int>(
+            valueListenable: _importProgress,
+            builder: (_, value, __) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 20),
+
+                  Text("$value / $_totalImportCount"),
+
+                  const SizedBox(height: 15),
+
+                  LinearProgressIndicator(
+                    value: _totalImportCount == 0
+                        ? 0
+                        : value / _totalImportCount,
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _loadSharedPhotos(int folderId, {String? subfolderPath}) async {
@@ -353,25 +460,36 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     final folder = widget.folder;
     if (folder == null || !await folder.exists()) return;
 
+    print("📂 Current Folder = ${folder.path}");
+
     final dirs = <Directory>[];
     final images = <File>[];
     final pdfs = <File>[];
 
     for (final entity in folder.listSync()) {
+      print("➡ ${entity.path}");
+
       if (entity is Directory) {
+        print("   DIR");
         dirs.add(entity);
       } else if (entity is File) {
+        print("   FILE");
+
         final p = entity.path.toLowerCase();
+
         if (p.endsWith('.pdf')) {
           pdfs.add(entity);
         } else if (p.endsWith('.jpg') ||
             p.endsWith('.jpeg') ||
             p.endsWith('.png') ||
             p.endsWith('.mp4')) {
+          print("   ✅ IMAGE FOUND");
           images.add(entity);
         }
       }
     }
+
+    print("Images found = ${images.length}");
 
     if (!mounted) return;
 
@@ -381,8 +499,6 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       pdfFiles = pdfs;
       filteredFolders = List.from(dirs);
     });
-
-    print("📑 Found PDFs: ${pdfFiles.map((f) => f.path).toList()}");
   }
 
   void _filterItems(String query) {
@@ -955,17 +1071,37 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     final newPath = '${parentDir.path}/$result.pdf';
 
     try {
-      await pdfFile.rename(newPath);
+      final oldPath = pdfFile.path;
 
-      if (widget.isShared) {
-        _loadSharedPhotos(widget.sharedFolderId!);
-      } else {
-        await _loadItems();
+      String serverPath = oldPath.replaceAll(RegExp(r'.*ScanVaultApp/'), '');
+
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+
+      if (token != null) {
+        final success = await PhotoService.renameFileOnServer(
+          oldPath: serverPath,
+          newName: result,
+          token: token,
+        );
+
+        if (success) {
+          // ✅ rename locally (correct way)
+          await File(oldPath).rename(newPath);
+
+          // ✅ update tracking
+          PhotoService.uploadedFiles.value.remove(oldPath);
+          PhotoService.uploadedFiles.value.add(newPath);
+
+          await _loadItems();
+
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('PDF renamed successfully')));
+        }
       }
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('PDF renamed to $result.pdf')));
+      print("🧠 OLD LOCAL PATH: $oldPath");
+      print("🧠 SERVER PATH: $serverPath");
     } catch (e) {
       ScaffoldMessenger.of(
         context,
@@ -995,6 +1131,52 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       selectionMode = false;
       selectedImages.clear();
     });
+  }
+
+  void _toggleSelectAll() {
+    setState(() {
+      if (selectedSegment == 'Images') {
+        final allItems = widget.isShared
+            ? apiPhotos.map((e) => e['path'] as String).toList()
+            : imageItems.map((e) => e.path).toList();
+
+        if (selectedImages.length == allItems.length) {
+          selectedImages.clear();
+          selectionMode = false;
+        } else {
+          selectionMode = true;
+          selectedImages = List.from(allItems);
+        }
+      }
+
+      if (selectedSegment == 'PDF') {
+        final allItems = widget.isShared
+            ? apiPdfFiles.map((e) => e['path'] as String).toList()
+            : pdfFiles.map((e) => e.path).toList();
+
+        if (selectedImages.length == allItems.length) {
+          selectedImages.clear();
+          selectionMode = false;
+        } else {
+          selectionMode = true;
+          selectedImages = List.from(allItems);
+        }
+      }
+    });
+  }
+
+  bool get _isAllSelected {
+    if (selectedSegment == 'Images') {
+      final total = widget.isShared ? apiPhotos.length : imageItems.length;
+      return total > 0 && selectedImages.length == total;
+    }
+
+    if (selectedSegment == 'PDF') {
+      final total = widget.isShared ? apiPdfFiles.length : pdfFiles.length;
+      return total > 0 && selectedImages.length == total;
+    }
+
+    return false;
   }
 
   @override
@@ -1094,218 +1276,233 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
 
             PopupMenuButton<String>(
               onSelected: (value) {
-                if (value == 'select') {
-                  setState(() {
-                    selectionMode = true;
-                    selectedImages.clear();
-                  });
+                if (value == 'select_all') {
+                  _toggleSelectAll();
                 }
               },
               itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: 'select',
-                  child: Text('Select Files to Share'),
+                PopupMenuItem(
+                  value: 'select_all',
+                  child: Row(
+                    children: [
+                      Icon(_isAllSelected ? Icons.deselect : Icons.select_all),
+                      const SizedBox(width: 10),
+                      Text(_isAllSelected ? 'Deselect All' : 'Select All'),
+                    ],
+                  ),
                 ),
               ],
-              icon: const Icon(Icons.more_vert),
             ),
           ],
           elevation: 4,
         ),
 
-        body: Column(
+        body: Stack(
           children: [
-            SegmentedButton<String>(
-              segments: const <ButtonSegment<String>>[
-                ButtonSegment<String>(
-                  value: 'Folders',
-                  label: Text('Folders'),
-                  icon: Icon(Icons.folder),
+            Column(
+              children: [
+                SegmentedButton<String>(
+                  segments: const <ButtonSegment<String>>[
+                    ButtonSegment<String>(
+                      value: 'Folders',
+                      label: Text('Folders'),
+                      icon: Icon(Icons.folder),
+                    ),
+                    ButtonSegment<String>(
+                      value: 'Images',
+                      label: Text('Images'),
+                      icon: Icon(Icons.image),
+                    ),
+                    ButtonSegment<String>(
+                      value: 'PDF',
+                      label: Text('PDF'),
+                      icon: Icon(Icons.picture_as_pdf),
+                    ),
+                  ],
+                  selected: {selectedSegment},
+                  onSelectionChanged: (Set<String> newSelection) {
+                    setState(() {
+                      selectedSegment = newSelection.first;
+                    });
+                    // Animate PageView when segment changes
+                    _pageController.animateToPage(
+                      selectedSegment == 'Folders'
+                          ? 0
+                          : selectedSegment == 'Images'
+                          ? 1
+                          : 2, // PDF page index
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                    );
+                  },
                 ),
-                ButtonSegment<String>(
-                  value: 'Images',
-                  label: Text('Images'),
-                  icon: Icon(Icons.image),
-                ),
-                ButtonSegment<String>(
-                  value: 'PDF',
-                  label: Text('PDF'),
-                  icon: Icon(Icons.picture_as_pdf),
+
+                const SizedBox(height: 10),
+
+                Expanded(
+                  child: PageView(
+                    controller: _pageController,
+                    onPageChanged: (index) {
+                      setState(() {
+                        selectedSegment = index == 0
+                            ? 'Folders'
+                            : index == 1
+                            ? 'Images'
+                            : 'PDF';
+                      });
+                    },
+                    children: [
+                      // --- Folders Page ---
+                      widget.isShared
+                          ? SharedFolderList(
+                              folders: apiFolders,
+                              userId: widget.userId,
+                              currentPath: widget.sharedFolderName,
+                            )
+                          : (folderItems.isEmpty
+                                ? Center(
+                                    child: Text(
+                                      "No folders yet",
+                                      style: textTheme.bodyMedium,
+                                    ),
+                                  )
+                                : FolderListCards(
+                                    folders: filteredFolders,
+                                    userId: widget.userId,
+                                    selectedFolder: widget.selectedFolder,
+                                    folderBackendId: widget.folderBackendId,
+                                    countFolderStats:
+                                        FolderStatService.getFolderStats,
+                                    onRename: _renameFolder,
+                                    onDelete: _deleteFolder,
+                                    onShare: _shareSubFolder,
+                                  )),
+
+                      // --- Images Page ---
+                      widget.isShared
+                          ? (apiPhotos.isEmpty
+                                ? Center(
+                                    child: Text(
+                                      "No images yet in shared folder",
+                                      style: textTheme.bodyMedium,
+                                    ),
+                                  )
+                                : ApiImageGrid(
+                                    photos: apiPhotos,
+                                    uploadedSet:
+                                        PhotoService.uploadedFiles.value,
+                                    selectionMode: selectionMode,
+                                    selectedImages: selectedImages,
+                                    onToggleSelect: (path) {
+                                      setState(() {
+                                        if (selectedImages.contains(path)) {
+                                          selectedImages.remove(path);
+                                        } else {
+                                          selectedImages.add(path);
+                                        }
+                                      });
+                                    },
+                                    sharedFolderId: widget.sharedFolderId,
+                                  ))
+                          : (imageItems.isEmpty
+                                ? Center(
+                                    child: Text(
+                                      "No images yet",
+                                      style: textTheme.bodyMedium,
+                                    ),
+                                  )
+                                : ImageGrid(
+                                    files: imageItems
+                                        .where((f) => !isPdf(f.path))
+                                        .toList(),
+                                    selectionMode: selectionMode,
+                                    selectedImages: selectedImages,
+                                    uploadedSet: PhotoService.uploadedFiles,
+                                    onToggleSelect: (path) {
+                                      setState(() {
+                                        if (selectedImages.contains(path)) {
+                                          selectedImages.remove(path);
+                                        } else {
+                                          selectedImages.add(path);
+                                        }
+
+                                        if (selectedImages.isEmpty) {
+                                          selectionMode = false; // ✅ auto-exit
+                                        }
+                                      });
+                                    },
+                                    onEnterSelectionMode: (path) {
+                                      setState(() {
+                                        selectionMode = true;
+                                        selectedImages = [
+                                          path,
+                                        ]; // ✅ first selected item
+                                      });
+                                    },
+                                  )),
+
+                      // --- PDF Page ---
+                      widget.isShared
+                          ? (apiPdfFiles.isEmpty
+                                ? Center(
+                                    child: Text(
+                                      "No PDFs yet in shared folder",
+                                      style: textTheme.bodyMedium,
+                                    ),
+                                  )
+                                : PDFGridCards(
+                                    pdfFiles: apiPdfFiles,
+                                    selectionMode: selectionMode,
+                                    selectedImages: selectedImages,
+                                    onSelectToggle: (path) {
+                                      setState(() {
+                                        if (selectedImages.contains(path)) {
+                                          selectedImages.remove(path);
+                                        } else {
+                                          selectedImages.add(path);
+                                        }
+                                      });
+                                    },
+                                  ))
+                          : PDFListCards(
+                              pdfFiles: pdfFiles,
+                              selectionMode: selectionMode,
+                              selectedImages: selectedImages,
+                              onSelectToggle: (path) {
+                                setState(() {
+                                  if (selectedImages.contains(path)) {
+                                    selectedImages.remove(path);
+                                  } else {
+                                    selectedImages.add(path);
+                                  }
+
+                                  if (selectedImages.isEmpty) {
+                                    selectionMode = false;
+                                  }
+                                });
+                              },
+                              onEnterSelectionMode: (path) {
+                                setState(() {
+                                  selectionMode = true;
+                                  selectedImages = [path];
+                                });
+                              },
+                              onRename: _renamePdf,
+                            ),
+                    ],
+                  ),
                 ),
               ],
-              selected: {selectedSegment},
-              onSelectionChanged: (Set<String> newSelection) {
-                setState(() {
-                  selectedSegment = newSelection.first;
-                });
-                // Animate PageView when segment changes
-                _pageController.animateToPage(
-                  selectedSegment == 'Folders'
-                      ? 0
-                      : selectedSegment == 'Images'
-                      ? 1
-                      : 2, // PDF page index
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                );
-              },
             ),
 
-            const SizedBox(height: 10),
-
-            Expanded(
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: (index) {
-                  setState(() {
-                    selectedSegment = index == 0
-                        ? 'Folders'
-                        : index == 1
-                        ? 'Images'
-                        : 'PDF';
-                  });
-                },
-                children: [
-                  // --- Folders Page ---
-                  widget.isShared
-                      ? SharedFolderList(
-                          folders: apiFolders,
-                          userId: widget.userId,
-                          currentPath: widget.sharedFolderName,
-                        )
-                      : (folderItems.isEmpty
-                            ? Center(
-                                child: Text(
-                                  "No folders yet",
-                                  style: textTheme.bodyMedium,
-                                ),
-                              )
-                            : FolderListCards(
-                                folders: filteredFolders,
-                                userId: widget.userId,
-                                selectedFolder: widget.selectedFolder,
-                                folderBackendId: widget.folderBackendId,
-                                countFolderStats:
-                                    FolderStatService.getFolderStats,
-                                onRename: _renameFolder,
-                                onDelete: _deleteFolder,
-                                onShare: _shareSubFolder,
-                              )),
-
-                  // --- Images Page ---
-                  widget.isShared
-                      ? (apiPhotos.isEmpty
-                            ? Center(
-                                child: Text(
-                                  "No images yet in shared folder",
-                                  style: textTheme.bodyMedium,
-                                ),
-                              )
-                            : ApiImageGrid(
-                                photos: apiPhotos,
-                                uploadedSet: PhotoService.uploadedFiles.value,
-                                selectionMode: selectionMode,
-                                selectedImages: selectedImages,
-                                onToggleSelect: (path) {
-                                  setState(() {
-                                    if (selectedImages.contains(path)) {
-                                      selectedImages.remove(path);
-                                    } else {
-                                      selectedImages.add(path);
-                                    }
-                                  });
-                                },
-                                sharedFolderId: widget.sharedFolderId,
-                              ))
-                      : (imageItems.isEmpty
-                            ? Center(
-                                child: Text(
-                                  "No images yet",
-                                  style: textTheme.bodyMedium,
-                                ),
-                              )
-                            : ImageGrid(
-                                files: imageItems
-                                    .where((f) => !isPdf(f.path))
-                                    .toList(),
-                                selectionMode: selectionMode,
-                                selectedImages: selectedImages,
-                                uploadedSet: PhotoService.uploadedFiles,
-                                onToggleSelect: (path) {
-                                  setState(() {
-                                    if (selectedImages.contains(path)) {
-                                      selectedImages.remove(path);
-                                    } else {
-                                      selectedImages.add(path);
-                                    }
-
-                                    if (selectedImages.isEmpty) {
-                                      selectionMode = false; // ✅ auto-exit
-                                    }
-                                  });
-                                },
-                                onEnterSelectionMode: (path) {
-                                  setState(() {
-                                    selectionMode = true;
-                                    selectedImages = [
-                                      path,
-                                    ]; // ✅ first selected item
-                                  });
-                                },
-                              )),
-
-                  // --- PDF Page ---
-                  widget.isShared
-                      ? (apiPdfFiles.isEmpty
-                            ? Center(
-                                child: Text(
-                                  "No PDFs yet in shared folder",
-                                  style: textTheme.bodyMedium,
-                                ),
-                              )
-                            : PDFGridCards(
-                                pdfFiles: apiPdfFiles,
-                                selectionMode: selectionMode,
-                                selectedImages: selectedImages,
-                                onSelectToggle: (path) {
-                                  setState(() {
-                                    if (selectedImages.contains(path)) {
-                                      selectedImages.remove(path);
-                                    } else {
-                                      selectedImages.add(path);
-                                    }
-                                  });
-                                },
-                              ))
-                      : PDFListCards(
-                          pdfFiles: pdfFiles,
-                          selectionMode: selectionMode,
-                          selectedImages: selectedImages,
-                          onSelectToggle: (path) {
-                            setState(() {
-                              if (selectedImages.contains(path)) {
-                                selectedImages.remove(path);
-                              } else {
-                                selectedImages.add(path);
-                              }
-
-                              if (selectedImages.isEmpty) {
-                                selectionMode = false;
-                              }
-                            });
-                          },
-                          onEnterSelectionMode: (path) {
-                            setState(() {
-                              selectionMode = true;
-                              selectedImages = [path];
-                            });
-                          },
-                          onRename: _renamePdf,
-                        ),
-                ],
-              ),
-            ),
+            //const ImportProgressCard(),
           ],
+        ),
+
+        floatingActionButton: FloatingActionButton(
+          onPressed: _pickImagesFromGallery,
+          tooltip: 'Import Images',
+          child: const Icon(Icons.photo_library),
         ),
 
         bottomNavigationBar: SafeArea(

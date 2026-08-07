@@ -221,10 +221,17 @@ class _CameraScreenState extends State<CameraScreen> {
         quality: VideoQuality.MediumQuality,
         deleteOrigin: false,
         includeAudio: true,
-        frameRate: 60,
       );
 
-      if (compressedVideo == null) return null;
+      print("➡️Compression finished");
+      print("➡️compressedVideo = $compressedVideo");
+
+      if (compressedVideo == null) {
+        print("Compression returned NULL");
+        return null;
+      }
+
+      print("Compressed path = ${compressedVideo.path}");
 
       final String newVideoPath = await _getSavePath('mp4');
 
@@ -232,7 +239,18 @@ class _CameraScreenState extends State<CameraScreen> {
       if (!await dir.exists()) await dir.create(recursive: true);
 
       final savedFile = await File(compressedVideo.path!).copy(newVideoPath);
+      final size = await savedFile.length();
+      debugPrint(
+        "Compressed video size: ${(size / 1024 / 1024).toStringAsFixed(2)} MB",
+      );
 
+      final originalSize = await File(videoFile.path).length();
+      final compressedSize = await savedFile.length();
+
+      print("Original: ${(originalSize / 1024 / 1024).toStringAsFixed(2)} MB");
+      print(
+        "Compressed: ${(compressedSize / 1024 / 1024).toStringAsFixed(2)} MB",
+      );
       // Save to iOS gallery
       if (Platform.isIOS) {
         await PhotoManager.editor.saveVideo(savedFile);
@@ -243,7 +261,9 @@ class _CameraScreenState extends State<CameraScreen> {
       });
 
       return savedFile;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print("➡️ Compression error: $e");
+      print(stackTrace);
       debugPrint("Error compressing/saving video: $e");
       return null;
     }

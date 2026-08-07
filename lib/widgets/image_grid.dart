@@ -95,6 +95,9 @@ class ImageGrid extends StatelessWidget {
                           : Image.file(
                               file,
                               fit: BoxFit.cover,
+                              cacheWidth: 300,
+                              cacheHeight: 300,
+                              filterQuality: FilterQuality.low,
                               errorBuilder: (_, __, ___) =>
                                   const Icon(Icons.broken_image),
                             ),

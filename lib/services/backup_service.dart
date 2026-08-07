@@ -26,6 +26,16 @@ class BackupService {
 
       final targetDir = Directory(selectedPath);
 
+      int totalFiles = 0;
+
+      await for (final entity in sourceDir.list(recursive: true)) {
+        if (entity is File) {
+          totalFiles++;
+        }
+      }
+      progressNotifier.value = 0;
+      progressTextNotifier.value = "0 / $totalFiles files copied";
+      _showProgressDialog(context);
       int copied = 0;
 
       await for (final entity in sourceDir.list(recursive: true)) {
@@ -37,7 +47,18 @@ class BackupService {
           await entity.copy(newFile.path);
 
           copied++;
+
+          if (copied % 10 == 0 || copied == totalFiles) {
+            progressNotifier.value = copied / totalFiles;
+            progressTextNotifier.value = "$copied / $totalFiles files copied";
+
+            await Future(() {});
+          }
         }
+      }
+
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -45,7 +66,9 @@ class BackupService {
       );
     } catch (e) {
       debugPrint("❌ Backup error: $e");
-
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Backup failed")));
@@ -71,6 +94,10 @@ class BackupService {
 
       final targetDir = Directory(selectedDir);
 
+      int totalFiles = selectedPaths.length;
+      progressNotifier.value = 0;
+      progressTextNotifier.value = "0 / $totalFiles files copied";
+      _showProgressDialog(context);
       int copied = 0;
 
       for (final path in selectedPaths) {
@@ -88,17 +115,60 @@ class BackupService {
         await file.copy(newFile.path);
 
         copied++;
-      }
+        if (copied % 10 == 0 || copied == totalFiles) {
+          progressNotifier.value = copied / totalFiles;
+          progressTextNotifier.value = "$copied / $totalFiles files copied";
 
+          await Future(() {});
+        }
+      }
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("$copied media items backed up")));
     } catch (e) {
       debugPrint("❌ Backup selected error: $e");
-
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Backup failed")));
     }
+  }
+
+  static ValueNotifier<double> progressNotifier = ValueNotifier(0);
+  static ValueNotifier<String> progressTextNotifier = ValueNotifier("");
+
+  static void _showProgressDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text("Backing up files..."),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ValueListenableBuilder<double>(
+                valueListenable: progressNotifier,
+                builder: (_, progress, __) {
+                  return LinearProgressIndicator(value: progress);
+                },
+              ),
+              const SizedBox(height: 16),
+              ValueListenableBuilder<String>(
+                valueListenable: progressTextNotifier,
+                builder: (_, text, __) {
+                  return Text(text);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

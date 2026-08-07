@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http/http.dart' as http;
@@ -13,6 +14,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'photo_list_screen.dart';
 import 'package:photomanager_practice/services/folder_service.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class FolderScreen extends StatefulWidget {
   final String userId;
@@ -45,6 +48,11 @@ class _FolderScreenState extends State<FolderScreen>
 
   // late final StreamSubscription _statusCheckSub;
   Directory? selectedFolder;
+  bool _isImporting = false;
+  int _importedCount = 0;
+  int _totalImportCount = 0;
+
+  final ValueNotifier<int> _importProgress = ValueNotifier(0);
 
   final FolderService folderService = FolderService();
 
@@ -57,6 +65,26 @@ class _FolderScreenState extends State<FolderScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkCompanyStorageUsage();
     });
+  }
+
+  Future<bool> requestMediaPermission() async {
+    if (!Platform.isAndroid) return true;
+
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+
+    if (androidInfo.version.sdkInt >= 33) {
+      final status = await Permission.photos.request();
+
+      print("Photos Permission = $status");
+
+      return status.isGranted;
+    } else {
+      final status = await Permission.storage.request();
+
+      print("Storage Permission = $status");
+
+      return status.isGranted;
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -194,6 +222,110 @@ class _FolderScreenState extends State<FolderScreen>
       folders = result;
       filteredFolders = result;
     });
+  }
+
+  Future<int> _countFiles(Directory dir) async {
+    int total = 0;
+
+    await for (final entity in dir.list(recursive: true)) {
+      if (entity is File) {
+        total++;
+      }
+    }
+
+    return total;
+  }
+
+  Future<void> _copyDirectory(Directory source, Directory destination) async {
+    await destination.create(recursive: true);
+
+    for (final entity in source.listSync()) {
+      if (entity is Directory) {
+        await _copyDirectory(
+          entity,
+          Directory('${destination.path}/${entity.path.split('/').last}'),
+        );
+      } else if (entity is File) {
+        final newFile = File(
+          '${destination.path}/${entity.path.split('/').last}',
+        );
+
+        await entity.copy(newFile.path);
+
+        _importedCount++;
+        _importProgress.value = _importedCount;
+      }
+    }
+  }
+
+  Future<void> _pickMainFolder() async {
+    final granted = await requestMediaPermission();
+
+    if (!granted) {
+      print("Permission denied");
+      return;
+    }
+    final selectedPath = await FilePicker.platform.getDirectoryPath();
+
+    if (selectedPath == null) return;
+
+    final source = Directory(selectedPath);
+
+    try {
+      final entities = source.listSync(followLinks: false);
+      print("Entity count before copy = ${entities.length}");
+
+      for (final e in entities) {
+        print("-> ${e.path}");
+      }
+    } catch (e) {
+      print("listSync error = $e");
+    }
+
+    final folderName = source.path.split('/').last;
+
+    final rootDir = await PhotoService.getUserRootDir();
+    if (rootDir == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Unable to determine destination folder")),
+      );
+      return;
+    }
+
+    final destination = Directory('${rootDir.path}/$folderName');
+
+    if (await destination.exists()) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Folder already exists")));
+      return;
+    }
+
+    _totalImportCount = await _countFiles(source);
+
+    _importedCount = 0;
+
+    _importProgress.value = 0;
+
+    _showImportDialog();
+
+    try {
+      print("Selected folder = ${source.path}");
+      print("Destination folder = ${destination.path}");
+      await _copyDirectory(source, destination);
+    } finally {
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+    }
+
+    await _loadFolders();
+
+    await _countFoldersAndImages();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("$folderName imported successfully")),
+    );
   }
 
   void _filterFolders(String query) {
@@ -706,6 +838,12 @@ class _FolderScreenState extends State<FolderScreen>
         ],
       ),
 
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _pickMainFolder,
+        icon: const Icon(Icons.drive_folder_upload),
+        label: const Text("Import Folder"),
+      ),
+
       bottomNavigationBar: SafeArea(
         child: BottomTabs(
           controller: _tabController,
@@ -838,6 +976,41 @@ class _FolderScreenState extends State<FolderScreen>
               ).then((_) {
                 _countFoldersAndImages();
               });
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  void _showImportDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text("Importing Folder"),
+          content: ValueListenableBuilder<int>(
+            valueListenable: _importProgress,
+            builder: (_, value, __) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+
+                  const SizedBox(height: 20),
+
+                  Text("$value / $_totalImportCount"),
+
+                  const SizedBox(height: 20),
+
+                  LinearProgressIndicator(
+                    value: _totalImportCount == 0
+                        ? 0
+                        : value / _totalImportCount,
+                  ),
+                ],
+              );
             },
           ),
         );

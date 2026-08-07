@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photomanager_practice/services/photo_service.dart'; // Only if saving images/PDF previews to gallery
+import 'package:photomanager_practice/utils/invoice_helper.dart';
 
 class ScanScreen extends StatefulWidget {
   final Directory? saveFolder;
@@ -47,10 +48,10 @@ class _ScanScreenState extends State<ScanScreen> {
     try {
       final imagePaths = await CunningDocumentScanner.getPictures(
         noOfPages: 50,
-        isGalleryImportAllowed: false,
+        isGalleryImportAllowed: true,
         iosScannerOptions: const IosScannerOptions(
           imageFormat: IosImageFormat.jpg,
-          jpgCompressionQuality: 0.7,
+          jpgCompressionQuality: 0.4,
         ),
       );
 
@@ -135,8 +136,36 @@ class _ScanScreenState extends State<ScanScreen> {
         );
       }
 
-      final pdfPath =
-          "${baseDir.path}/scanned_${DateTime.now().millisecondsSinceEpoch}.pdf";
+      String fileName = "document_${DateTime.now().millisecondsSinceEpoch}";
+
+      try {
+        if (images.isNotEmpty) {
+          String typeName = "Document";
+
+          try {
+            if (images.isNotEmpty) {
+              String text = await extractTextFromImage(images.first);
+
+              print("📄 OCR TEXT:\n$text");
+
+              typeName = detectDocumentType(text);
+
+              print("📂 Detected Type: $typeName");
+            }
+          } catch (e) {
+            print("⚠️ Detection failed: $e");
+          }
+
+          // ✅ Generate unique name like InvoiceBill1, InvoiceBill2
+          fileName = await generateUniqueFileName(baseDir, typeName);
+
+          print("📁 Final File Name: $fileName");
+        }
+      } catch (e) {
+        print("⚠️ Smart naming failed: $e");
+      }
+
+      final pdfPath = "${baseDir.path}/$fileName.pdf";
 
       final file = File(pdfPath);
       await file.writeAsBytes(await pdf.save());
@@ -146,7 +175,7 @@ class _ScanScreenState extends State<ScanScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("PDF saved successfully")));
-
+      print("📦 PDF size: ${await file.length() / (1024 * 1024)} MB");
       return file;
     } catch (e) {
       debugPrint("PDF conversion error: $e");
