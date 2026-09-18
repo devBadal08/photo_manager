@@ -16,6 +16,7 @@ import '../screen/login_screen.dart';
 import '../screen/user_profile_screen.dart';
 import '../services/folder_service.dart';
 import '../provider/theme_provider.dart';
+import '../services/photo_service.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -117,7 +118,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
 
   Widget _buildDrawerHeader() {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
       child: Row(
         children: [
           GestureDetector(
@@ -152,7 +153,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
   }
 
   Widget _buildCompanySelector() {
-    if (_companies.isEmpty) return SizedBox.shrink();
+    if (_companies.isEmpty) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -264,21 +265,13 @@ class _CustomDrawerState extends State<CustomDrawer> {
     final picker = ImagePicker();
     final image = await picker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 100, // keep original, we compress manually
+      imageQuality: 100,
       preferredCameraDevice: CameraDevice.front,
     );
 
     if (image == null) return;
 
     final XFile compressedImage = await _compressImage(image);
-
-    debugPrint(
-      "Compressed size: ${File(compressedImage.path).lengthSync() / 1024} KB",
-    );
-
-    //debugPrint("Original size: ${originalFile.lengthSync() / 1024} KB");
-    //debugPrint("Compressed size: ${compressedFile.lengthSync() / 1024} KB");
-
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString("auth_token");
     final userId = prefs.getString("user_id");
@@ -323,14 +316,10 @@ class _CustomDrawerState extends State<CustomDrawer> {
 
     final uri = Uri.parse("https://techstrota.cloud/api/remove-profile-photo");
 
-    final response = await http.post(
+    await http.post(
       uri,
       headers: {"Authorization": "Bearer $token", "Accept": "application/json"},
     );
-
-    if (response.statusCode != 200) {
-      debugPrint("❌ Failed to remove selfie from server");
-    }
   }
 
   void _openDiceBearPicker() async {
@@ -365,7 +354,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
                   await prefs.remove("profile_photo_$userId");
 
                   setState(() {
-                    _profilePhotoUrl = null; // fallback to avatar
+                    _profilePhotoUrl = null;
                     _hasSelfie = false;
                   });
                   Navigator.pop(context);
@@ -389,8 +378,8 @@ class _CustomDrawerState extends State<CustomDrawer> {
       _startAutoUploadListener();
 
       final current = await Connectivity().checkConnectivity();
-      if (current == ConnectivityResult.wifi ||
-          current == ConnectivityResult.mobile) {
+      if (current.contains(ConnectivityResult.wifi) ||
+          current.contains(ConnectivityResult.mobile)) {
         await AutoUploadService.instance.enableBackgroundUpload();
       }
     }
@@ -406,9 +395,8 @@ class _CustomDrawerState extends State<CustomDrawer> {
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       results,
     ) async {
-      // `results` is a List<ConnectivityResult>
       if (results.isNotEmpty) {
-        final result = results.first; // Pick the first available connectivity
+        final result = results.first;
         if (_autoUploadEnabled &&
             (result == ConnectivityResult.wifi ||
                 result == ConnectivityResult.mobile)) {
@@ -515,18 +503,17 @@ class _CustomDrawerState extends State<CustomDrawer> {
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // close dialog
+              Navigator.pop(context);
               setState(() {
-                _deleteEnabled = false; // reset switch
+                _deleteEnabled = false;
               });
             },
             child: const Text("Cancel"),
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context); // close dialog
+              Navigator.pop(context);
               await _deleteAllImages();
-              // Close the drawer automatically after deleting
               if (mounted) {
                 Navigator.of(widget.parentContext).pop();
               }
@@ -542,13 +529,8 @@ class _CustomDrawerState extends State<CustomDrawer> {
     FolderService().showLogoutDialog(context, () async {
       if (mounted) {
         await FolderService().logoutUser();
-        // 1️⃣ Close the logout confirmation dialog
         Navigator.of(context).pop();
-
-        // 2️⃣ Close the custom drawer dialog
         Navigator.of(widget.parentContext).pop();
-
-        // 3️⃣ Navigate to login screen using parent context
         Navigator.pushReplacement(
           widget.parentContext,
           MaterialPageRoute(builder: (_) => LoginScreen()),
@@ -637,6 +619,18 @@ class _CustomDrawerState extends State<CustomDrawer> {
                     ),
 
                     drawerItem(
+                      icon: Icons.cloud_upload_outlined,
+                      text: "Upload Pending Photos",
+                      onTap: () async {
+                        Navigator.pop(context);
+
+                        await PhotoService.uploadPendingPhotos(
+                          context: widget.parentContext,
+                        );
+                      },
+                    ),
+
+                    drawerItem(
                       icon: Icons.delete_forever,
                       text: "Delete All Images",
                       onTap: () => _confirmDelete(),
@@ -660,7 +654,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
                       icon: Icons.backup,
                       text: "Backup Photos",
                       onTap: () async {
-                        Navigator.pop(context); // close drawer
+                        Navigator.pop(context);
 
                         final prefs = await SharedPreferences.getInstance();
                         final userId = prefs.getString('user_id');
@@ -707,6 +701,137 @@ class _CustomDrawerState extends State<CustomDrawer> {
                       text: "Log Out",
                       onTap: () => _showLogoutDialog(context),
                     ),
+
+                    const SizedBox(height: 16),
+
+                    // Updated Bottom Container Matching Reference Image Layout
+                    // Replace the bottom Container block in your ListView with this:
+                    Container(
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Theme.of(
+                              context,
+                            ).colorScheme.primary.withOpacity(0.08),
+                            Theme.of(
+                              context,
+                            ).colorScheme.primary.withOpacity(0.02),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withOpacity(0.15),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withOpacity(0.03),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          // App Icon with subtle glow effect
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Theme.of(context).colorScheme.primary,
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withOpacity(0.8),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withOpacity(0.3),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.camera_alt_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+
+                          // App Title and Tagline
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  "ScanVault",
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  "Your Photos. Always Safe.",
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          // Modern Pill Version Badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surface,
+                              borderRadius: BorderRadius.circular(30),
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.2),
+                              ),
+                            ),
+                            child: Text(
+                              "v 1.0.1",
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                   ],
                 );
               },

@@ -470,10 +470,10 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
       print("➡ ${entity.path}");
 
       if (entity is Directory) {
-        print("   DIR");
+        print("DIR");
         dirs.add(entity);
       } else if (entity is File) {
-        print("   FILE");
+        print("FILE");
 
         final p = entity.path.toLowerCase();
 
@@ -1358,6 +1358,9 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
                               folders: apiFolders,
                               userId: widget.userId,
                               currentPath: widget.sharedFolderName,
+
+                              // ✅ Pass parent's write permission
+                              canWrite: widget.canWrite,
                             )
                           : (folderItems.isEmpty
                                 ? Center(

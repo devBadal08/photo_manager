@@ -5,12 +5,14 @@ class SharedFolderList extends StatelessWidget {
   final List<Map<String, dynamic>> folders;
   final String userId;
   final String? currentPath;
+  final bool canWrite;
 
   const SharedFolderList({
     super.key,
     required this.folders,
     required this.userId,
     this.currentPath,
+    this.canWrite = false,
   });
 
   @override
@@ -29,7 +31,16 @@ class SharedFolderList extends StatelessWidget {
       itemCount: folders.length,
       itemBuilder: (context, index) {
         final folder = folders[index];
+
         final folderName = folder['name'] ?? 'Unnamed';
+
+        final int? folderId = folder['id'] is int
+            ? folder['id']
+            : int.tryParse(folder['id']?.toString() ?? '');
+
+        if (folderId == null) {
+          return const SizedBox.shrink();
+        }
 
         return Card(
           margin: const EdgeInsets.symmetric(vertical: 8),
@@ -59,10 +70,19 @@ class SharedFolderList extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) => PhotoListScreen(
                     isShared: true,
-                    sharedFolderId: folder['id'], // ✅ this folder’s real id
-                    sharedFolderName: folder['name'], // UI only
+
+                    // ✅ IMPORTANT:
+                    // Use THIS subfolder's backend ID.
+                    sharedFolderId: folderId,
+
+                    // ✅ Keep the path/name for UI/navigation.
+                    sharedFolderName: folderName,
+
                     userId: userId,
-                    canWrite: folder['access_type'] == 'write',
+
+                    // ✅ IMPORTANT:
+                    // Subfolder inherits parent's write permission.
+                    canWrite: canWrite,
                   ),
                 ),
               );

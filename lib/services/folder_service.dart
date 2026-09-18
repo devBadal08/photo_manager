@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photomanager_practice/services/photo_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
 
 class FolderService {
   Future<String?> loadUserId() async {

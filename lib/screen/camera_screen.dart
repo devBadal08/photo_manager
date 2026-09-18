@@ -63,7 +63,8 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Future<void> initCamera() async {
     final cameras = widget.cameras;
-    if (cameras.isEmpty) return;
+
+    if (cameras.isEmpty || !mounted) return;
 
     _controller = CameraController(
       cameras[_currentCameraIndex],
@@ -71,22 +72,43 @@ class _CameraScreenState extends State<CameraScreen> {
       enableAudio: true,
     );
 
-    await _controller.initialize();
+    try {
+      await _controller.initialize();
 
-    // Enable auto-focus and auto-exposure
-    await _controller.setFocusMode(FocusMode.auto);
-    await _controller.setExposureMode(ExposureMode.auto);
-    await _controller.setFlashMode(FlashMode.off);
-    _flashMode = FlashMode.off;
+      if (!mounted) return;
 
-    if (!mounted) return;
-    setState(() => _isCameraInitialized = true);
+      await _controller.setFocusMode(FocusMode.auto);
+      await _controller.setExposureMode(ExposureMode.auto);
+      await _controller.setFlashMode(FlashMode.off);
+
+      if (!mounted) return;
+
+      _flashMode = FlashMode.off;
+
+      setState(() {
+        _isCameraInitialized = true;
+      });
+    } catch (e) {
+      debugPrint("Camera initialization error: $e");
+    }
   }
 
   Future<void> _toggleFlash() async {
-    _flashMode = _flashMode == FlashMode.off ? FlashMode.torch : FlashMode.off;
-    await _controller.setFlashMode(_flashMode);
-    setState(() {});
+    final newMode = _flashMode == FlashMode.off
+        ? FlashMode.torch
+        : FlashMode.off;
+
+    try {
+      await _controller.setFlashMode(newMode);
+
+      if (!mounted) return;
+
+      setState(() {
+        _flashMode = newMode;
+      });
+    } catch (e) {
+      debugPrint("Error changing flash: $e");
+    }
   }
 
   Future<void> _capturePhoto() async {
@@ -115,13 +137,17 @@ class _CameraScreenState extends State<CameraScreen> {
 
       final mediaFile = MediaFile(file: File(newPath), type: MediaType.image);
 
+      if (!mounted) return;
+
       setState(() {
         capturedMedia.add(mediaFile);
       });
     } catch (e) {
       debugPrint("Error capturing photo: $e");
     } finally {
-      setState(() => _isCapturing = false);
+      if (mounted) {
+        setState(() => _isCapturing = false);
+      }
     }
   }
 
@@ -169,7 +195,15 @@ class _CameraScreenState extends State<CameraScreen> {
   // ================= Start / Stop Timer =================
   void _startRecordingTimer() {
     _recordingSeconds = 0;
+
+    _recordingTimer?.cancel();
+
     _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
       setState(() {
         _recordingSeconds++;
       });
@@ -188,6 +222,9 @@ class _CameraScreenState extends State<CameraScreen> {
       await _controller.prepareForVideoRecording();
       await _controller.setFlashMode(_flashMode);
       await _controller.startVideoRecording();
+
+      if (!mounted) return;
+
       setState(() => _isRecording = true);
       _startRecordingTimer();
     } catch (e) {
@@ -200,8 +237,13 @@ class _CameraScreenState extends State<CameraScreen> {
 
     try {
       final XFile videoFile = await _controller.stopVideoRecording();
-      setState(() => _isRecording = false);
+
       _stopRecordingTimer();
+
+      if (!mounted) return;
+
+      setState(() => _isRecording = false);
+
       await _compressAndSaveVideo(videoFile);
     } catch (e) {
       debugPrint("Error stopping video recording: $e");
@@ -256,6 +298,8 @@ class _CameraScreenState extends State<CameraScreen> {
         await PhotoManager.editor.saveVideo(savedFile);
       }
 
+      if (!mounted) return savedFile;
+
       setState(() {
         capturedMedia.add(MediaFile(file: savedFile, type: MediaType.video));
       });
@@ -269,21 +313,33 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
-  void _switchCamera() async {
+  Future<void> _switchCamera() async {
+    if (!mounted) return;
+
     _currentCameraIndex = (_currentCameraIndex + 1) % widget.cameras.length;
+
     await _controller.dispose();
+
+    if (!mounted) return;
+
     await initCamera();
   }
 
   @override
   void dispose() {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+
+    _audioPlayer.dispose();
     _controller.dispose();
+
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+
     super.dispose();
   }
 
@@ -312,6 +368,8 @@ class _CameraScreenState extends State<CameraScreen> {
     } catch (e) {
       debugPrint('Error setting focus: $e');
     }
+
+    if (!mounted) return;
 
     // Show focus indicator
     setState(() {
@@ -349,12 +407,19 @@ class _CameraScreenState extends State<CameraScreen> {
                 onScaleUpdate: (details) async {
                   final maxZoom = await _controller.getMaxZoomLevel();
                   final minZoom = await _controller.getMinZoomLevel();
-                  double newZoom = (_baseZoom * details.scale).clamp(
+
+                  final newZoom = (_baseZoom * details.scale).clamp(
                     minZoom,
                     maxZoom,
                   );
+
                   await _controller.setZoomLevel(newZoom);
-                  setState(() => _currentZoom = newZoom);
+
+                  if (!mounted) return;
+
+                  setState(() {
+                    _currentZoom = newZoom;
+                  });
                 },
                 child: SizedBox.expand(
                   child: Stack(
@@ -652,6 +717,8 @@ class _FullScreenMediaViewState extends State<FullScreenMediaView> {
       _videoController =
           VideoPlayerController.file(widget.media[_currentIndex].file)
             ..initialize().then((_) {
+              if (!mounted) return;
+
               setState(() {});
               _videoController!.play();
             });
@@ -678,11 +745,14 @@ class _FullScreenMediaViewState extends State<FullScreenMediaView> {
         controller: _pageController,
         itemCount: widget.media.length,
         onPageChanged: (index) {
+          if (!mounted) return;
+
           setState(() {
             _currentIndex = index;
             _currentScale = 1.0;
-            _loadVideoController();
           });
+
+          _loadVideoController();
         },
         itemBuilder: (_, index) {
           final media = widget.media[index];
